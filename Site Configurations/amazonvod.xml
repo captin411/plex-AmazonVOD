@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<site site="http://.*.amazon.com"
+	    plugin="http://.*.images-amazon.com/images/.*/digital/video/streaming/.*/UnboxScreeningRoomClient._.*.swf"
+       initialState="playing"
+			version="1.0">
+			
+	<crop x="103" y="10" width="790" height="390" />
+
+    <!-- 993.000000 x 410.000000 -->
+
+    <seekbar type="simple">
+      <dead x="100" y="100" />
+      <played>
+      </played>
+    </seekbar>
+
+<!-- PLAYING -->
+    <state name="playing">
+        <event>
+            <condition>
+                <command name="pause"/>
+            </condition>
+            <action>
+                        <type key="32" />
+                        <goto state="paused" />
+            </action>
+        </event>
+    </state>
+
+		<state name="paused">
+			<event>
+          <condition>
+              <command name="play"/>
+          </condition>
+          <action>
+              <type key="32" />
+							<goto state="playing" />
+          </action>
+      </event>
+		</state>
+</site>
