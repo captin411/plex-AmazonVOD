@@ -15,6 +15,7 @@ PREFS_PREFIX      = "%s/prefs||Amazon Preferences/" % PLUGIN_PREFIX
 AMAZON_PROXY_URL            = "http://atv-sr.amazon.com/proxy/proxy"
 AMAZON_SEARCH_URL           = "http://www.amazon.com/s/"
 AMAZON_PRODUCT_URL          = "http://www.amazon.com/gp/product/%s"
+AMAZON_PLAYER_URL           = "http://www.amazon.com/gp/video/streaming/mini-mode.html?asin=%s&version=r-162"
 
 CACHE_INTERVAL              = 3600
 DEBUG                       = True
@@ -253,7 +254,7 @@ def makeDirItemsFromAsin(items):
     else:
       title = asin.get('TITLE','')
 
-    url = AMAZON_PRODUCT_URL % asin['ASIN']
+    url = AMAZON_PLAYER_URL % asin['ASIN']
     duration = int(asin.get('RUNTIME',0))*60*1000
 
     stream_url = asin.get('STREAM_URL_1','')
