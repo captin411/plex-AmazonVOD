@@ -1,9 +1,11 @@
-from PMS import Plugin, Log, XML, HTTP, Utils, JSON, Prefs
-from PMS.MediaXML import *
-from PMS.Shorthand import _L, _R, _E, _D
-import re
-import pickle
+import re, pickle
 from BeautifulSoup import BeautifulSoup
+
+# PMS plugin framework
+from PMS import *
+from PMS.Objects import *
+from PMS.Shortcuts import *
+
 
 ####################################################################################################
 
@@ -18,6 +20,7 @@ AMAZON_PRODUCT_URL          = "http://www.amazon.com/gp/product/%s"
 CACHE_INTERVAL              = 3600
 DEBUG                       = True
 
+global __customerId, __token, __tokensChecked
 __customerId = None
 __token      = None
 __tokensChecked = False
@@ -25,13 +28,60 @@ __tokensChecked = False
 ####################################################################################################
 
 def Start():
-  Plugin.AddRequestHandler(PLUGIN_PREFIX, HandleRequest, _L("amazon"), "icon-default.png", "art-default.png")
-  Plugin.AddViewGroup("InfoList", viewMode="InfoList", contentType="items")
-  Plugin.AddViewGroup("List", viewMode="List", contentType="items")
-  HTTP.__headers["User-agent"] = "Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10_5_6; en-gb) AppleWebKit/528.16 (KHTML, like Gecko) Version/4.0 Safari/528.16"
-  Prefs.Expose("loginemail", "Login Email")
-  Prefs.Expose("password", "Password")
+  Plugin.AddPrefixHandler(PLUGIN_PREFIX, Menu, L("amazon"), "icon-default.png", "art-default.png")
+  Plugin.AddViewGroup("InfoList", viewMode="InfoList", mediaType="items")
+  Plugin.AddViewGroup("List", viewMode="List", mediaType="items")
+
+def CreatePrefs():
+  Prefs.Add(id='login', type='text', default='', label='Login Email')
+  Prefs.Add(id='password', type='text', default='', label='Password', option='hidden')
   
+def Menu():
+  dir = MediaContainer()
+  if Prefs.Get('login'):
+    dir.Append(Function(DirectoryItem(MenuYourPurchases,"Your Purchases")))
+  dir.Append(Function(SearchDirectoryItem(MenuSearch,"Search", "Search", R("search.png"))))
+  dir.Append(PrefsItem(title="Preferences"))
+  return dir
+
+def MenuYourPurchases(sender):
+  dir = MediaContainer(title2=sender.itemTitle)
+  purchasedAsinList = purchasedAsin()
+  for i in makeDirItemsFromAsin(purchasedAsinList):
+    dir.AppendItem(i)
+  return dir
+
+def MenuSearch(sender, query=None):
+  PMS.Log("MenuSearch query: %s" % repr(query))
+  dir = MediaContainer(title2=sender.itemTitle)
+  res = asin_search(query)
+  items = makeDirItemsFromAsin(res)
+  if len(items) == 0:
+    dir.SetMessage("Search","No results found for %s" % query)
+  for i in items:
+    dir.Append(i)
+  return dir;
+
+def MenuSeasonList(sender, asin=None):
+  dir = MediaContainer(title2=sender.itemTitle)
+
+  PMS.Log('seasonlist for %s' % asin)
+
+  url = AMAZON_PRODUCT_URL % asin
+
+  azPage = HTTP.Request(url, errors='replace')
+  asinStart   = azPage.find("&asinList=") + 10
+  asinListStr = azPage[asinStart:asinStart+azPage[asinStart:].find("&")]
+
+  asinInfo = asin_info(asinListStr.split(','))
+  for i in makeDirItemsFromAsin(asinInfo):
+    dir.Append(i)
+
+  return dir
+
+
+  pass
+
 ####################################################################################################
 
 def makeDirItemsFromAsin(items):
@@ -39,7 +89,7 @@ def makeDirItemsFromAsin(items):
   ret = []
 
   for asin in items:
-    Log.Add(repr(asin))
+    #PMS.Log(repr(asin))
     thumb = asin.get('IMAGE_URL_LARGE',asin.get('IMAGE_URL_SMALL',''))
     desc = asin.get('SYNOPSIS','')
     rating = float(asin.get('AMAZONRATINGS',0.0))
@@ -50,30 +100,30 @@ def makeDirItemsFromAsin(items):
       title = asin.get('TITLE','')
 
     url = AMAZON_PRODUCT_URL % asin['ASIN']
-    Log.Add("%s" % url)
+    PMS.Log("%s" % url)
     duration = int(asin.get('RUNTIME',0))*60*1000
 
     stream_url = asin.get('STREAM_URL_1','')
 
     if stream_url != '':
-      item = WebVideoItem(url,title,desc,str(duration),thumb)
-      item.SetAttr('rating',str(rating))
+      other_args = dict()
       if 'SEASONNUMBER' in asin:
-        item.SetAttr('season',asin['SEASONNUMBER'])
+        other_args['season'] = asin['SEASONNUMBER']
       if 'EPISODENUMBER' in asin:
-        item.SetAttr('episode',asin['EPISODENUMBER'])
+        other_args['episode'] = asin['EPISODENUMBER']
+      item = WebVideoItem(url,title,summary=desc,duration=str(duration),thumb=thumb,rating=str(rating),**other_args)
     else:
-      item = DirectoryItem("%s/seasonlist/%s" % (PLUGIN_PREFIX, asin['ASIN']),title,title)
+      item = Function(DirectoryItem(MenuSeasonList,"%s" % title),asin=asin['ASIN'])
 
     ret.append(item)
 
-  ret.sort(cmp=lambda a,b: cmp(a.GetAttr('title'),b.GetAttr('title')))
+  ret.sort(cmp=lambda a,b: cmp(a.__dict__.get('title'),b.__dict__.get('title')))
   return ret
 
 
 def signIn():
 
-  Log.Add("signIn() called")
+  PMS.Log("signIn() called")
 
   USER = Prefs.Get("loginemail")
   PASS = Prefs.Get("password")
@@ -100,7 +150,7 @@ def signIn():
       'password': PASS,
       'email': USER
   }
-  x = HTTP.Post('https://www.amazon.com/gp/flex/sign-in/select.html',params)
+  x = HTTP.Request('https://www.amazon.com/gp/flex/sign-in/select.html',values=params,encoding='utf-8')
 
   return True
 
@@ -149,9 +199,9 @@ def purchasedAsin():
     'f': 'getQueue',
     't': 'Streaming'
   }
-  html = HTTP.Post(AMAZON_PROXY_URL,params, {})
+  html = HTTP.Request(AMAZON_PROXY_URL,values=params,encoding='utf-8')
   jsonString = html.split("\n")[2]
-  for i in JSON.DictFromString(jsonString):
+  for i in JSON.ObjectFromString(jsonString):
     asinInfo = i.get('FeedAttributeMap',None)
     if asinInfo and asinInfo.get('ISSTREAMABLE','N') == 'Y':
       ret.append(asinInfo)
@@ -159,77 +209,10 @@ def purchasedAsin():
   return ret
 
 def HandleRequest(pathNouns, count):
-  Log.Add("HandleRequest(%s,%d)" % (repr(pathNouns), count))
-
   customerId, token = streamingTokens()
 
-  Log.Add("c: %s t: %s" % (str(customerId),str(token)))
-
-  if count == 0:
-
-    dir = MenuContainer()
-    dir.SetAttr("title2","Main Menu")
-
-    if customerId and token:
-      dir.AppendItem(DirectoryItem("purchased","Your Purchases"))
-    dir.AppendItem(SearchDirectoryItem("search","Search","Search", _R("search.png")))
-    dir.AppendItem(DirectoryItem(PREFS_PREFIX, "Amazon Preferences", ""))
-
-    return dir.ToXML()
-
-  elif pathNouns[0].startswith("purchased"):
-    dir = MenuContainer()
-    dir.SetAttr("title2","Your Purchases")
-    Log.Add('purchased')
-    purchasedAsinList = purchasedAsin()
-    for i in makeDirItemsFromAsin(purchasedAsinList):
-      dir.AppendItem(i)
-    return dir.ToXML()
-
-    
-
-  elif pathNouns[0].startswith("seasonlist"):
-    dir = MenuContainer()
-
-    Log.Add('seasonlist')
-
-    if count == 2:
-      asin = pathNouns[1]
-      url = AMAZON_PRODUCT_URL % asin
-
-      azPage = HTTP.Get(url)
-      asinStart = azPage.find("&asinList=") + 10
-      asinListStr  = azPage[asinStart:asinStart+azPage[asinStart:].find("&")]
-
-      asinInfo = asin_info(asinListStr.split(','))
-      for i in makeDirItemsFromAsin(asinInfo):
-        dir.AppendItem(i)
-
-    return dir.ToXML()
-
-
-  # Framework Additions: - borrowed from iPlayer plugin
-  elif pathNouns[0].startswith("search"):
-
-    dir = MenuContainer()
-
-    if count > 1:
-      query = pathNouns[1]
-      if count > 2:
-        for i in range(2, len(pathNouns)): query += "/%s" % pathNouns[i]
-
-      dir.SetAttr("title2","Search: %s" % query)
-      res = asin_search(query)
-      items = makeDirItemsFromAsin(res)
-      if len(items) == 0:
-        dir.SetMessage("Search","No results found for %s" % query)
-      for i in items:
-        dir.AppendItem(i)
-
-    return dir.ToXML();
-
-  elif pathNouns[0].startswith("prefs"):
-    dir = MenuContainer()
+  if pathNouns[0].startswith("prefs"):
+    dir = MediaContainer()
     dir.SetAttr("title2","Amazon Preferences")
 
     loginemail = Prefs.Get("loginemail")
@@ -245,7 +228,6 @@ def HandleRequest(pathNouns, count):
 
         message_add = ""
         if loginemail != None and password != None:
-            global __customerId, __token, __tokensChecked
             __customerId = None
             __token = None
             cid,tok  = streamingTokens()
@@ -286,7 +268,7 @@ def asin_search(query):
     'field-keywords': query
   }
 
-  html = HTTP.Post(AMAZON_SEARCH_URL,params, {})
+  html = HTTP.Request(AMAZON_SEARCH_URL,values=params,errors='replace')
 
   soup = BeautifulSoup(html)
 
@@ -302,7 +284,7 @@ def asin_info(asinList):
   if(len(asinList) == 0):
     return []
 
-  # http://atv-sr.amazon.com/proxy/proxy?c=A2UADYTSXK548T&token=af2c81f6854618a5a1b72fe206d674a2&f=getASINList&asinList=B000V22QJ0&t=Streaming
+  # http://atv-sr.amazon.com/proxy/proxy?c=&token=&f=getASINList&asinList=B000V22QJ0&t=Streaming
   params = {
     'c': '',
     'token': '',
@@ -310,18 +292,12 @@ def asin_info(asinList):
     'asinList': ','.join(asinList),
     't': 'Streaming'
   }
-  html = HTTP.Post(AMAZON_PROXY_URL,params, {})
+  html = HTTP.Request(AMAZON_PROXY_URL,values=params, errors='replace')
 
   jsonString = html.split("\n")[2]
 
   ret = []
-  for i in JSON.DictFromString(jsonString):
+  for i in JSON.ObjectFromString(jsonString):
     if i.get('ISSTREAMABLE','N') == 'Y':
       ret.append(i)
   return ret
-
-class MenuContainer(MediaContainer):
-  def __init__(self, art="art-default.png", viewGroup="List", title1=None, title2=None, noHistory=False, replaceParent=False):
-    if title1 is None:
-      title1 = _L("amazonlong")
-    MediaContainer.__init__(self, art, viewGroup, title1, title2, noHistory, replaceParent)
