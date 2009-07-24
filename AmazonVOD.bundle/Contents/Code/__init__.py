@@ -35,19 +35,12 @@ def Start():
 def CreatePrefs():
   Prefs.Add(id='login', type='text', default='', label='Login Email')
   Prefs.Add(id='password', type='text', default='', label='Password', option='hidden')
-  #Prefs.Add(id='session-id', type='text', default='', label='AZ1', option='internal')
-  #Prefs.Add(id='session-id-time', type='text', default='', label='AZ2', option='internal')
-  #Prefs.Add(id='session-token', type='text', default='', label='AZ3', option='internal')
-  #Prefs.Add(id='ubid-main', type='text', default='', label='AZ4', option='internal')
 
 def PrefsHandler(login=None,password=None):
-  global __customerId, __token, __tokensChecked
-  __customerId = None
-  __token = None
-  __tokensChecked = False
-
   message_add = ""
   if login != None and password != None:
+      Prefs.Set('login',login)
+      Prefs.Set('password',password)
       cid,tok  = streamingTokens()
       if cid and tok:
         message_add = "Login to Amazon OK"
@@ -65,7 +58,7 @@ def Menu(message_title=None,message_text=None):
   dir = MediaContainer()
   if message_title != None and message_text != None:
     dir.SetMessage(message_title,message_text)
-  if Prefs.Get('login'):
+  if customerId != None:
     dir.Append(Function(DirectoryItem(MenuYourPurchases,"Your Purchases")))
   dir.Append(Function(SearchDirectoryItem(MenuSearch,"Search", "Search", R("search.png"))))
   dir.Append(PrefsItem(title="Preferences"))
@@ -111,10 +104,13 @@ def MenuSeasonList(sender, asin=None):
 
 def signIn():
 
-  #PMS.Log("signIn() called")
+  PMS.Log("signIn() called")
 
   USER = Prefs.Get("login")
   PASS = Prefs.Get("password")
+
+  PMS.Log('user: %s' % USER)
+  PMS.Log('pass: %s' % '******')
 
   if not (USER and PASS):
     return False
@@ -147,6 +143,7 @@ def signIn():
 ####################################################################################################
 
 def streamingTokens():
+  PMS.Log('streamingTokens()')
   global __customerId, __token, __tokensChecked
 
   if (__customerId and __token) or __tokensChecked:

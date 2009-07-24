@@ -42,7 +42,6 @@
         </event>
     </state>
 
-<!-- PLAYING -->
     <state name="playing">
         <event>
             <condition>
@@ -55,15 +54,15 @@
         </event>
     </state>
 
-		<state name="paused">
-			<event>
+	<state name="paused">
+		<event>
           <condition>
-              <command name="play"/>
+            <command name="play"/>
           </condition>
           <action>
-              <type key="32" />
-							<goto state="playing" />
+            <type key="32" />
+	  		<goto state="playing" />
           </action>
-      </event>
-		</state>
+        </event>
+	</state>
 </site>
