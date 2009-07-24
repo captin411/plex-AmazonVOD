@@ -1,4 +1,4 @@
-import re, pickle
+import re, pickle, pprint
 from BeautifulSoup import BeautifulSoup
 
 # PMS plugin framework
@@ -191,6 +191,7 @@ def purchasedAsin():
   jsonString = html.split("\n")[2]
   for i in JSON.ObjectFromString(jsonString):
     asinInfo = i.get('FeedAttributeMap',None)
+    PMS.Log(pprint.pformat(asinInfo))
     if asinInfo and asinInfo.get('ISSTREAMABLE','N') == 'Y':
       ret.append(asinInfo)
 
@@ -233,6 +234,7 @@ def asin_info(asinList):
 
   ret = []
   for i in JSON.ObjectFromString(jsonString):
+    PMS.Log(pprint.pformat(i))
     if i.get('ISSTREAMABLE','N') == 'Y':
       ret.append(i)
   return ret
@@ -244,13 +246,14 @@ def makeDirItemsFromAsin(items):
   for asin in items:
     thumb = asin.get('IMAGE_URL_LARGE',asin.get('IMAGE_URL_SMALL',''))
     desc = asin.get('SYNOPSIS','')
-    rating = float(asin.get('AMAZONRATINGS',0.0))
+    rating = float(asin.get('AMAZONRATINGS',0.0)) * 2
 
     if 'EPISODENUMBER' in asin and 'SEASONNUMBER' in asin:
       title = 'S%02dE%02d : %s' % (int(asin['SEASONNUMBER']),int(asin['EPISODENUMBER']),asin['TITLE'])
     else:
       title = asin.get('TITLE','')
 
+    PMS.Log("rating: %s, title: %s" % (str(rating), title))
     url = AMAZON_PLAYER_URL % asin['ASIN']
     duration = int(asin.get('RUNTIME',0))*60*1000
 
