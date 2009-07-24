@@ -1,18 +1,46 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <site site="http://.*.amazon.com"
 	    plugin="http://.*.images-amazon.com/images/.*/digital/video/streaming/.*/UnboxScreeningRoomClient._.*.swf"
-       initialState="playing"
+       initialState="buffering" manualLock="true"
 			version="1.0">
+
+    <!--
+    <setCookie domain=".amazon.com" path="/" name="session-id" secure="false" value="${session-id}" />
+    <setCookie domain=".amazon.com" path="/" name="session-id-time" secure="false" value="${session-id-time}" />
+    <setCookie domain=".amazon.com" path="/" name="session-token" secure="false" value="${session-token}" />
+    <setCookie domain=".amazon.com" path="/" name="ubid-main" secure="false" value="${ubid-main}" />
+    -->
 			
-	<crop x="103" y="10" width="790" height="390" />
+	<crop x="0" y="0" width="0" height="0" />
 
     <!-- 993.000000 x 410.000000 -->
 
     <seekbar type="simple">
+      <start x="48" y="-78"/>
+      <end x="1200" y="-78"/>
       <dead x="100" y="100" />
       <played>
+        <color rgb="698851"/>
+        <color rgb="658250"/>
+        <color rgb="5f7a4b"/>
+        <color rgb="587147"/>
+        <color rgb="536841"/>
       </played>
     </seekbar>
+
+    <state name="buffering">
+        <event>
+            <condition>
+                <frameLoaded />
+            </condition>
+            <action>
+                <pause time="1000"/>
+                <run script="sc=document.getElementById('streaming_container'); stb=document.getElementById('streamBoxTable');sc.style.height='720px';sc.style.width='1280px';stb.style.height='720px';stb.style.width='1280px';"/>
+                <lockPlugin/>
+                <goto state="playing" />
+            </action>
+        </event>
+    </state>
 
 <!-- PLAYING -->
     <state name="playing">
