@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <site site="http://.*.amazon.com"
-	    plugin="http://.*\.images-amazon\.com/images/.*/digital/video/streaming/.*/UnboxScreeningRoomClient\._.*\.swf"
-       initialState="buffering" manualLock="true"
-			version="1.0">
+    plugin="http://.*\.images-amazon\.com/images/.*/digital/video/streaming/.*/UnboxScreeningRoomClient\._.*\.swf"
+    initialState="buffering"
+    manualLock="true"
+    allowPopups="true"
+	version="1.0">
 
     <!--
     <setCookie domain=".amazon.com" path="/" name="session-id" secure="false" value="${session-id}" />
@@ -48,8 +50,8 @@
                 <command name="pause"/>
             </condition>
             <action>
-                        <type key="32" />
-                        <goto state="paused" />
+                <type key="32" />
+                <goto state="paused" />
             </action>
         </event>
     </state>
