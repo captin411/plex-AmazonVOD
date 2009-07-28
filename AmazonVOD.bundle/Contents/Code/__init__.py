@@ -13,9 +13,12 @@ PLUGIN_PREFIX     = "/video/AmazonVOD"
 PREFS_PREFIX      = "%s/prefs||Amazon Preferences/" % PLUGIN_PREFIX
 
 AMAZON_PROXY_URL            = "http://atv-sr.amazon.com/proxy/proxy"
-AMAZON_SEARCH_URL           = "http://www.amazon.com/s/"
 AMAZON_PRODUCT_URL          = "http://www.amazon.com/gp/product/%s"
 AMAZON_PLAYER_URL           = "http://www.amazon.com/gp/video/streaming/mini-mode.html?asin=%s&version=r-162"
+
+AMAZON_AWS_URL              = "http://ecs.amazonaws.com/onca/xml"
+
+# "http://ecs.amazonaws.com/onca/xml?Service=AWSECommerceService&AWSAccessKeyId=0BARCCRGVHBC4DBYAN82&Operation=ItemSearch&SearchIndex=UnboxVideo&Keywords=Battlestar%20Galactica&ResponseGroup=ItemIds"
 
 CACHE_INTERVAL              = 3600
 DEBUG                       = True
@@ -23,6 +26,8 @@ DEBUG                       = True
 __customerId = None
 __token      = None
 __tokensChecked = False
+
+__purchasedAsins = dict()
 
 ####################################################################################################
 
@@ -57,7 +62,8 @@ def Menu(message_title=None,message_text=None):
   customerId, token = streamingTokens()
   dir = MediaContainer()
   if message_title != None and message_text != None:
-    dir.SetMessage(message_title,message_text)
+    dir = MessageContainer(message_title,message_text)
+    return dir
   if customerId != None:
     dir.Append(Function(DirectoryItem(MenuYourPurchases,"Your Purchases")))
   dir.Append(Function(SearchDirectoryItem(MenuSearch,"Search", "Search", R("search.png"))))
@@ -76,7 +82,8 @@ def MenuSearch(sender, query=None):
   res = asin_search(query)
   items = makeDirItemsFromAsin(res)
   if len(items) == 0:
-    dir.SetMessage("Search","No results found for %s" % query)
+    dir = MessageContainer("Search","No results found for %s" % query)
+    return dir
   for i in items:
     dir.Append(i)
   return dir;
@@ -175,6 +182,11 @@ def streamingTokens():
 def purchasedAsin():
   ret = []
 
+  global __purchasedAsins
+
+  __purchasedAsins = dict()
+
+
   customerId, token = streamingTokens()
 
   if not (customerId and token):
@@ -192,6 +204,7 @@ def purchasedAsin():
   for i in JSON.ObjectFromString(jsonString):
     asinInfo = i.get('FeedAttributeMap',None)
     if asinInfo and asinInfo.get('ISSTREAMABLE','N') == 'Y' and asinInfo.get('ISRENTAL','N') == 'N':
+      __purchasedAsins[asinInfo['ASIN']] = asinInfo
       ret.append(asinInfo)
 
   return ret
@@ -199,20 +212,16 @@ def purchasedAsin():
 def asin_search(query):
 
   params = {
-    'search-alias': 'amazontv',
-    'field-keywords': query
+    'Service': 'AWSECommerceService',
+    'AWSAccessKeyId': '0BARCCRGVHBC4DBYAN82',
+    'Operation': 'ItemSearch',
+    'SearchIndex': 'UnboxVideo',
+    'Keywords': query,
+    'ResponseGroup': 'ItemIds'
   }
-
-  html = HTTP.Request(AMAZON_SEARCH_URL,values=params,errors='replace')
-
-  soup = BeautifulSoup(html)
-
-  asinList = []
-
-  for e in soup.findAll('div', 'productTitle'):
-    asin = re.sub(r'srProductTitle_(.*?)_\d+',r'\1',e['id'])
-    asinList.append(asin)
-
+  
+  xml = XML.ElementFromURL(AMAZON_AWS_URL,values=params,errors='replace')
+  asinList = xml.xpath('//ns:ASIN/text()', namespaces={'ns': 'http://webservices.amazon.com/AWSECommerceService/2005-10-05'} )
   return asin_info(asinList)
 
 def asin_info(asinList):
@@ -239,13 +248,15 @@ def asin_info(asinList):
 
 def makeDirItemsFromAsin(items):
 
+  global __purchasedAsins
+
   ret = []
 
   for asin in items:
+    PMS.Log(pprint.pformat(asin))
     other_args = dict()
     thumb = asin.get('IMAGE_URL_LARGE',asin.get('IMAGE_URL_SMALL',''))
     desc = asin.get('SYNOPSIS','')
-    #desc = "%s\n%s" % (desc,pprint.pformat(asin))
     rating = float(asin.get('AMAZONRATINGS',0.0)) * 2
 
     if 'EPISODENUMBER' in asin and 'SEASONNUMBER' in asin:
@@ -261,8 +272,12 @@ def makeDirItemsFromAsin(items):
       subtitle = ''
 
     PMS.Log("rating: %s, title: %s subtitle: %s" % (str(rating), title, subtitle))
-    url = AMAZON_PLAYER_URL % asin['ASIN']
-    duration = int(asin.get('RUNTIME',0))*60*1000
+    url = AMAZON_PRODUCT_URL % asin['ASIN']
+    if asin.get('ASIN') in __purchasedAsins:
+      duration = int(asin.get('RUNTIME',0))*60*1000
+    else:
+      duration = int(asin.get('FREERUNTIME',0))*1000
+      
 
     stream_url = asin.get('STREAM_URL_1','')
 
