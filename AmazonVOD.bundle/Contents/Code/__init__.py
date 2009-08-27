@@ -14,7 +14,7 @@ PREFS_PREFIX      = "%s/prefs||Amazon Preferences/" % PLUGIN_PREFIX
 
 AMAZON_PROXY_URL            = "http://atv-sr.amazon.com/proxy/proxy"
 AMAZON_PRODUCT_URL          = "http://www.amazon.com/gp/product/%s"
-AMAZON_PLAYER_URL           = "http://www.amazon.com/gp/video/streaming/mini-mode.html?asin=%s&version=r-162"
+AMAZON_PLAYER_URL           = "http://www.amazon.com/gp/video/streaming/mini-mode.html?asin=%s&version=r-180"
 
 AMAZON_AWS_URL              = "http://ecs.amazonaws.com/onca/xml"
 
