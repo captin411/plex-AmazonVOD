@@ -1,10 +1,11 @@
-import re, time
-from BeautifulSoup import BeautifulSoup
+import time
 
 # PMS plugin framework
 from PMS import *
 from PMS.Objects import *
 from PMS.Shortcuts import *
+#from lxml import etree
+from boto.connection import AWSQueryConnection
 
 
 ####################################################################################################
@@ -15,10 +16,11 @@ PREFS_PREFIX      = "%s/prefs||Amazon Preferences/" % PLUGIN_PREFIX
 AMAZON_PROXY_URL            = "http://atv-sr.amazon.com/proxy/proxy"
 AMAZON_PRODUCT_URL          = "http://www.amazon.com/gp/product/%s"
 AMAZON_PLAYER_URL           = "http://www.amazon.com/gp/video/streaming/mini-mode.html?asin=%s&version=r-180"
-
-AMAZON_AWS_URL              = "http://ecs.amazonaws.com/onca/xml"
-
-# "http://ecs.amazonaws.com/onca/xml?Service=AWSECommerceService&AWSAccessKeyId=0BARCCRGVHBC4DBYAN82&Operation=ItemSearch&SearchIndex=UnboxVideo&Keywords=Battlestar%20Galactica&ResponseGroup=ItemIds"
+AMAZON_AWS_HOST             = "ecs.amazonaws.com"
+AMAZON_AWS_PATH             = "/onca/xml"
+AMAZON_AWS_URL              = "http://%s%s" % (AMAZON_AWS_HOST, AMAZON_AWS_PATH)
+AMAZON_AWS_KEY              = "0BARCCRGVHBC4DBYAN82"
+AMAZON_AWS_SECRET           = "iwJYwj3RPe/pwLKKhU1cmJRuEu3RSUpNp+UiVRsm" # yeah don't even try it, I have no paid services with Amazon so this isn't really 'secret' =)
 
 CACHE_INTERVAL              = 3600
 DEBUG                       = True
@@ -225,16 +227,29 @@ def purchasedAsin():
 
 def asin_search(query):
 
+  # "http://ecs.amazonaws.com/onca/xml?Service=AWSECommerceService&AWSAccessKeyId=0BARCCRGVHBC4DBYAN82&Operation=ItemSearch&SearchIndex=UnboxVideo&Keywords=Battlestar%20Galactica&ResponseGroup=ItemIds"
+  # thanks to http://jjinux.blogspot.com/2009/06/python-amazon-product-advertising-api.html for the hack
+
   params = {
     'Service': 'AWSECommerceService',
-    'AWSAccessKeyId': '0BARCCRGVHBC4DBYAN82',
+    'AWSAccessKeyId': AMAZON_AWS_KEY,
     'Operation': 'ItemSearch',
     'SearchIndex': 'UnboxVideo',
     'Keywords': query,
-    'ResponseGroup': 'ItemIds'
+    'ResponseGroup': 'ItemIds',
+    'Timestamp': time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
+
   }
+  aws_conn = AWSQueryConnection(
+      aws_access_key_id=AMAZON_AWS_KEY,
+      aws_secret_access_key=AMAZON_AWS_SECRET, is_secure=False,
+      host=AMAZON_AWS_HOST)
+  aws_conn.SignatureVersion = '2'
+  qs, signature = aws_conn.get_signature(params, 'POST', AMAZON_AWS_PATH)
+  params['Signature'] = signature
   
   xml = XML.ElementFromURL(AMAZON_AWS_URL,values=params,errors='replace')
+  #PMS.Log(etree.tostring(xml))
   asinList = xml.xpath('//ns:ASIN/text()', namespaces={'ns': 'http://webservices.amazon.com/AWSECommerceService/2005-10-05'} )
   return asin_info(asinList)
 
