@@ -36,7 +36,6 @@ def Start():
   Plugin.AddPrefixHandler("%s/:/prefs/set" % PLUGIN_PREFIX ,PrefsHandler, "phandler")
   Plugin.AddViewGroup("InfoList", viewMode="InfoList", mediaType="items")
   Plugin.AddViewGroup("List", viewMode="List", mediaType="items")
-  cid,tok  = streamingTokens()
 
 def CreatePrefs():
   Prefs.Add(id='login', type='text', default='', label='Login Email')
@@ -44,15 +43,23 @@ def CreatePrefs():
 
 def PrefsHandler(login=None,password=None):
   message_add = ""
+  global __customerId, __token, __tokensChecked
   if login != None and password != None:
+      __customerId = None
+      __token = None
+      __tokensChecked = False
       Prefs.Set('login',login)
       Prefs.Set('password',password)
-
-  PMS.Plugin.Restart()
+      cid,tok  = streamingTokens()
+      if cid and tok:
+        message_add = "Login to Amazon OK"
+        Plugin.Restart() # this will cause the message to NOT be shown
+      else:
+        message_add = "Could not log into Amazon"
 
   title = "Preferences Updated"
   message = "Amazon preferences updated."
-  dir = MessageContainer(title,"%s" % (message))
+  dir = MessageContainer(title,"%s\n%s" % (message,message_add))
   return dir
 
 def Menu(message_title=None,message_text=None):
@@ -66,6 +73,7 @@ def Menu(message_title=None,message_text=None):
     dir.Append(Function(DirectoryItem(MenuYourPurchases,"Your Purchases")))
   dir.Append(Function(SearchDirectoryItem(MenuSearch,"Search", "Search", R("search.png"))))
   dir.Append(PrefsItem(title="Preferences"))
+  dir.nocache = 1
   return dir
 
 def MenuYourPurchases(sender):
@@ -158,8 +166,6 @@ def streamingTokens():
       PMS.Log('found customerid+token or tokensChecked')
       return (__customerId,__token)
 
-  __tokensChecked = True
-
   html = HTTP.Request('http://www.amazon.com/gp/video/streaming/',errors='replace')
   paramStart = html.find("&customer=")
   if paramStart == -1:
@@ -180,6 +186,8 @@ def streamingTokens():
   tokenParamStart = html.find("&token=") + 7
   tokenParamEnd   = tokenParamStart + html[tokenParamStart:].find("&")
   __token         = html[tokenParamStart:tokenParamEnd]
+
+  __tokensChecked = True
 
   PMS.Log("__customerId: %s" % __customerId)
   PMS.Log("__token: %s" % __token)
