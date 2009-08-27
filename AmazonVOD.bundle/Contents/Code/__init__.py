@@ -1,4 +1,4 @@
-import re, pickle, pprint, time
+import re, time
 from BeautifulSoup import BeautifulSoup
 
 # PMS plugin framework
@@ -36,6 +36,7 @@ def Start():
   Plugin.AddPrefixHandler("%s/:/prefs/set" % PLUGIN_PREFIX ,PrefsHandler, "phandler")
   Plugin.AddViewGroup("InfoList", viewMode="InfoList", mediaType="items")
   Plugin.AddViewGroup("List", viewMode="List", mediaType="items")
+  cid,tok  = streamingTokens()
 
 def CreatePrefs():
   Prefs.Add(id='login', type='text', default='', label='Login Email')
@@ -46,15 +47,12 @@ def PrefsHandler(login=None,password=None):
   if login != None and password != None:
       Prefs.Set('login',login)
       Prefs.Set('password',password)
-      cid,tok  = streamingTokens()
-      if cid and tok:
-        message_add = "Login to Amazon OK"
-      else:
-        message_add = "Could not log into Amazon"
+
+  PMS.Plugin.Restart()
 
   title = "Preferences Updated"
   message = "Amazon preferences updated."
-  dir = MessageContainer(title,"%s\n%s" % (message,message_add))
+  dir = MessageContainer(title,"%s" % (message))
   return dir
 
 def Menu(message_title=None,message_text=None):
@@ -120,9 +118,12 @@ def signIn():
   PMS.Log('pass: %s' % '******')
 
   if not (USER and PASS):
+    PMS.Log('user or pass is empty')
     return False
 
   x = HTTP.Request('https://www.amazon.com/gp/sign-in.html', errors='replace')
+
+  PMS.Log('signing in')
 
   sessId = None
   for idx,cookie in enumerate(HTTP.__cookieJar):
@@ -154,6 +155,7 @@ def streamingTokens():
   global __customerId, __token, __tokensChecked
 
   if (__customerId and __token) or __tokensChecked:
+      PMS.Log('found customerid+token or tokensChecked')
       return (__customerId,__token)
 
   __tokensChecked = True
@@ -163,10 +165,12 @@ def streamingTokens():
   if paramStart == -1:
       ret = signIn()
       if not ret:
+        PMS.Log('ttry1 fail')
         return (None,None)
       html = HTTP.Request('http://www.amazon.com/gp/video/streaming/',errors='replace')
       paramStart = html.find("&customer=")
       if paramStart == -1:
+          PMS.Log('ttry2 fail')
           return (None,None)
 
   custParamStart = paramStart+10
@@ -177,6 +181,8 @@ def streamingTokens():
   tokenParamEnd   = tokenParamStart + html[tokenParamStart:].find("&")
   __token         = html[tokenParamStart:tokenParamEnd]
 
+  PMS.Log("__customerId: %s" % __customerId)
+  PMS.Log("__token: %s" % __token)
   return (__customerId,__token)
 
 def purchasedAsin():
@@ -253,7 +259,6 @@ def makeDirItemsFromAsin(items):
   ret = []
 
   for asin in items:
-    PMS.Log(pprint.pformat(asin))
     other_args = dict()
     thumb = asin.get('IMAGE_URL_LARGE',asin.get('IMAGE_URL_SMALL',''))
     desc = asin.get('SYNOPSIS','')
