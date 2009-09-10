@@ -4,14 +4,12 @@ import time
 from PMS import *
 from PMS.Objects import *
 from PMS.Shortcuts import *
-#from lxml import etree
 from boto.connection import AWSQueryConnection
 
 
 ####################################################################################################
 
 PLUGIN_PREFIX     = "/video/AmazonVOD"
-PREFS_PREFIX      = "%s/prefs||Amazon Preferences/" % PLUGIN_PREFIX
 
 AMAZON_PROXY_URL            = "http://atv-sr.amazon.com/proxy/proxy"
 AMAZON_PRODUCT_URL          = "http://www.amazon.com/gp/product/%s"
@@ -21,6 +19,8 @@ AMAZON_AWS_PATH             = "/onca/xml"
 AMAZON_AWS_URL              = "http://%s%s" % (AMAZON_AWS_HOST, AMAZON_AWS_PATH)
 AMAZON_AWS_KEY              = "0BARCCRGVHBC4DBYAN82"
 AMAZON_AWS_SECRET           = "iwJYwj3RPe/pwLKKhU1cmJRuEu3RSUpNp+UiVRsm" # yeah don't even try it, I have no paid services with Amazon so this isn't really 'secret' =)
+
+AMAZON_ART = 'art-default.jpg'
 
 CACHE_INTERVAL              = 3600
 DEBUG                       = True
@@ -34,10 +34,11 @@ __purchasedAsins = dict()
 ####################################################################################################
 
 def Start():
-  Plugin.AddPrefixHandler(PLUGIN_PREFIX, Menu, L("amazon"), "icon-default.png", "art-default.jpg")
+  Plugin.AddPrefixHandler(PLUGIN_PREFIX, Menu, L("amazon"), "icon-default.png", AMAZON_ART)
   Plugin.AddPrefixHandler("%s/:/prefs/set" % PLUGIN_PREFIX ,PrefsHandler, "phandler")
   Plugin.AddViewGroup("InfoList", viewMode="InfoList", mediaType="items")
   Plugin.AddViewGroup("List", viewMode="List", mediaType="items")
+  MediaContainer.art = R(AMAZON_ART)
 
 def CreatePrefs():
   Prefs.Add(id='login', type='text', default='', label='Login Email')
@@ -72,9 +73,9 @@ def Menu(message_title=None,message_text=None):
     dir = MessageContainer(message_title,message_text)
     return dir
   if customerId != None:
-    dir.Append(Function(DirectoryItem(MenuYourPurchases,"Your Purchases")))
-  dir.Append(Function(SearchDirectoryItem(MenuSearch,"Search", "Search", R("search.png"))))
-  dir.Append(PrefsItem(title="Preferences"))
+    dir.Append(Function(DirectoryItem(MenuYourPurchases,"Your Purchases", thumb=R("purchased.png"))))
+  dir.Append(Function(InputDirectoryItem(MenuSearch,"Search", "Search", thumb=R("search.png") )))
+  dir.Append(PrefsItem(title="Preferences", thumb=R("gear.png")) )
   dir.nocache = 1
   return dir
 
