@@ -11,25 +11,22 @@ from boto.connection import AWSQueryConnection
 
 PLUGIN_PREFIX     = "/video/AmazonVOD"
 
-AMAZON_PROXY_URL            = "http://atv-sr.amazon.com/proxy/proxy"
-AMAZON_PRODUCT_URL          = "http://www.amazon.com/gp/product/%s"
-#AMAZON_PLAYER_URL           = "http://www.amazon.com/gp/video/streaming/mini-mode.html?asin=%s&version=r-180"
-AMAZON_AWS_HOST             = "ecs.amazonaws.com"
-AMAZON_AWS_PATH             = "/onca/xml"
-AMAZON_AWS_URL              = "http://%s%s" % (AMAZON_AWS_HOST, AMAZON_AWS_PATH)
-AMAZON_AWS_KEY              = "0BARCCRGVHBC4DBYAN82"
-AMAZON_AWS_SECRET           = "iwJYwj3RPe/pwLKKhU1cmJRuEu3RSUpNp+UiVRsm" # yeah don't even try it, I have no paid services with Amazon so this isn't really 'secret' =)
+AMAZON_PLAYER_URL = "http://www.amazon.com/gp/video/streaming/mini-mode.html?asin=%s"
+AMAZON_AWS_KEY    = "0BARCCRGVHBC4DBYAN82"
+AMAZON_AWS_SECRET = "iwJYwj3RPe/pwLKKhU1cmJRuEu3RSUpNp+UiVRsm"
 
 AMAZON_ART = 'art-default.jpg'
 
 CACHE_INTERVAL              = 3600
-DEBUG                       = True
+DEBUG                       = False
+
+if DEBUG:
+    from lxml import etree
 
 __customerId = None
 __token      = None
 __tokensChecked = False
 
-__purchasedAsins = dict()
 
 ####################################################################################################
 
@@ -80,40 +77,28 @@ def Menu(message_title=None,message_text=None):
   return dir
 
 def MenuYourPurchases(sender):
-  dir = MediaContainer(title2=sender.itemTitle)
-  purchasedAsinList = purchasedAsin()
-  for i in makeDirItemsFromAsin(purchasedAsinList):
+  dir = MediaContainer(title2=sender.itemTitle,view='InfoList')
+
+  customerId, token = streamingTokens()
+  purchasedItems = UnboxClient.purchasedItems(customerId, token)
+  items = makeDirFromItems(purchasedItems)
+  if len(items) == 0:
+    dir = MessageContainer("Purchases","You do not have any purchases")
+    return dir
+  for i in items:
     dir.Append(i)
-  return dir
+  return dir;
 
 def MenuSearch(sender, query=None):
-  dir = MediaContainer(title2=sender.itemTitle)
-  res = asin_search(query)
-  items = makeDirItemsFromAsin(res)
+  dir = MediaContainer(title2=sender.itemTitle,view='InfoList')
+  res = UnboxClient.itemSearch(query)
+  items = makeDirFromItems(res)
   if len(items) == 0:
     dir = MessageContainer("Search","No results found for %s" % query)
     return dir
   for i in items:
     dir.Append(i)
   return dir;
-
-def MenuSeasonList(sender, asin=None):
-  dir = MediaContainer(title2=sender.itemTitle)
-
-  url = AMAZON_PRODUCT_URL % asin
-
-  azPage = HTTP.Request(url, errors='replace')
-  asinStart   = azPage.find("&asinList=") + 10
-  asinListStr = azPage[asinStart:asinStart+azPage[asinStart:].find("&")]
-
-  asinInfo = asin_info(asinListStr.split(','))
-  for i in makeDirItemsFromAsin(asinInfo):
-    dir.Append(i)
-
-  return dir
-
-
-  pass
 
 ####################################################################################################
 
@@ -196,131 +181,220 @@ def streamingTokens():
   PMS.Log("__token: %s" % __token)
   return (__customerId,__token)
 
-def purchasedAsin():
+def makeDirFromItems(items):
   ret = []
-
-  global __purchasedAsins
-
-  __purchasedAsins = dict()
-
-
-  customerId, token = streamingTokens()
-
-  if not (customerId and token):
-    return ret
-
-  # http://atv-sr.amazon.com/proxy/proxy?c=<customer id>&f=getQueue&token=<token>&t=Streaming
-  params = {
-    'c': customerId,
-    'token': token,
-    'f': 'getQueue',
-    't': 'Streaming'
-  }
-  html = HTTP.Request(AMAZON_PROXY_URL,values=params,errors='replace')
-  jsonString = html.split("\n")[2]
-  for i in JSON.ObjectFromString(jsonString):
-    asinInfo = i.get('FeedAttributeMap',None)
-    if asinInfo and asinInfo.get('ISSTREAMABLE','N') == 'Y' and asinInfo.get('ISRENTAL','N') == 'N':
-      __purchasedAsins[asinInfo['ASIN']] = asinInfo
-      ret.append(asinInfo)
-
-  return ret
-
-def asin_search(query):
-
-  # "http://ecs.amazonaws.com/onca/xml?Service=AWSECommerceService&AWSAccessKeyId=0BARCCRGVHBC4DBYAN82&Operation=ItemSearch&SearchIndex=UnboxVideo&Keywords=Battlestar%20Galactica&ResponseGroup=ItemIds"
-  # thanks to http://jjinux.blogspot.com/2009/06/python-amazon-product-advertising-api.html for the hack
-
-  params = {
-    'Service': 'AWSECommerceService',
-    'AWSAccessKeyId': AMAZON_AWS_KEY,
-    'Operation': 'ItemSearch',
-    'SearchIndex': 'UnboxVideo',
-    'Keywords': query,
-    'ResponseGroup': 'ItemIds',
-    'Timestamp': time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
-
-  }
-  aws_conn = AWSQueryConnection(
-      aws_access_key_id=AMAZON_AWS_KEY,
-      aws_secret_access_key=AMAZON_AWS_SECRET, is_secure=False,
-      host=AMAZON_AWS_HOST)
-  aws_conn.SignatureVersion = '2'
-  qs, signature = aws_conn.get_signature(params, 'POST', AMAZON_AWS_PATH)
-  params['Signature'] = signature
-  
-  xml = XML.ElementFromURL(AMAZON_AWS_URL,values=params,errors='replace')
-  #PMS.Log(etree.tostring(xml))
-  asinList = xml.xpath('//ns:ASIN/text()', namespaces={'ns': 'http://webservices.amazon.com/AWSECommerceService/2005-10-05'} )
-  return asin_info(asinList)
-
-def asin_info(asinList):
-  if(len(asinList) == 0):
-    return []
-
-  # http://atv-sr.amazon.com/proxy/proxy?c=&token=&f=getASINList&asinList=B000V22QJ0&t=Streaming
-  params = {
-    'c': '',
-    'token': '',
-    'f': 'getASINList',
-    'asinList': ','.join(asinList),
-    't': 'Streaming'
-  }
-  html = HTTP.Request(AMAZON_PROXY_URL,values=params, errors='replace')
-
-  jsonString = html.split("\n")[2]
-
-  ret = []
-  for i in JSON.ObjectFromString(jsonString):
-    if i.get('ISSTREAMABLE','N') == 'Y' and i.get('ISRENTAL','N') == 'N':
-      ret.append(i)
-  return ret
-
-def makeDirItemsFromAsin(items):
-
-  global __purchasedAsins
-
-  ret = []
-
-  for asin in items:
-    other_args = dict()
-    thumb = asin.get('IMAGE_URL_LARGE',asin.get('IMAGE_URL_SMALL',''))
-    desc = asin.get('SYNOPSIS','')
-    rating = float(asin.get('AMAZONRATINGS',0.0)) * 2
-
-    if 'EPISODENUMBER' in asin and 'SEASONNUMBER' in asin:
-      title = 'S%02dE%02d : %s' % (int(asin['SEASONNUMBER']),int(asin['EPISODENUMBER']),asin['TITLE'])
-    else:
-      title = asin.get('TITLE','')
-
-    if 'RELEASEDATE' in asin:
-      # 2001-11-16T00:00:00
-      subtitle = str((time.strptime(asin['RELEASEDATE'],'%Y-%m-%dT%H:%M:%S'))[0])
-      other_args['subtitle'] = subtitle
-    else:
-      subtitle = ''
-
-    PMS.Log("rating: %s, title: %s subtitle: %s" % (str(rating), title, subtitle))
-    url = AMAZON_PRODUCT_URL % asin['ASIN']
-    if asin.get('ASIN') in __purchasedAsins:
-      duration = int(asin.get('RUNTIME',0))*60*1000
-    else:
-      duration = int(asin.get('FREERUNTIME',0))*1000
-      
-
-    stream_url = asin.get('STREAM_URL_1','')
-
-    if stream_url != '':
-      if 'SEASONNUMBER' in asin:
-        other_args['season'] = asin['SEASONNUMBER']
-      if 'EPISODENUMBER' in asin:
-        other_args['episode'] = asin['EPISODENUMBER']
-      item = WebVideoItem(url,title,summary=desc,duration=str(duration),thumb=thumb,rating=str(rating),**other_args)
-    else:
-      item = Function(DirectoryItem(MenuSeasonList,"%s" % title),asin=asin['ASIN'])
-
-    ret.append(item)
-
+  for item in items:
+    wvi = WebVideoItem(
+        item['url'],
+        item['title'],
+        summary=item['description'],
+        subtitle=item['subtitle'],
+        duration=item['duration'],
+        thumb=item['thumb'],
+        rating=item['rating'])
+    ret.append(wvi)
   ret.sort(cmp=lambda a,b: cmp(a.__dict__.get('title'),b.__dict__.get('title')))
   return ret
 
+class AmazonUnbox:
+    def __init__(self, key, secret):
+        self.XML_NS = 'http://webservices.amazon.com/AWSECommerceService/2009-03-31'
+        self.AMAZON_PROXY_URL = "http://atv-sr.amazon.com/proxy/proxy"
+        self.NS = {'ns': self.XML_NS}
+        self.KEY = key
+        self.SECRET = secret
+        self._conn = AWSQueryConnection(
+            aws_access_key_id=self.KEY,
+            aws_secret_access_key=self.SECRET,
+            is_secure=False,
+            host='ecs.amazonaws.com')
+        self._conn.SignatureVersion = '2'
+  
+    def _request_xml(self,params):
+        params['Timestamp'] = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
+        params['AWSAccessKeyId'] = self.KEY
+        params['Version']='2009-03-31'
+        qs, signature = self._conn.get_signature(params, 'POST', '/onca/xml')
+        params['Signature'] = signature
+        return XML.ElementFromURL("http://ecs.amazonaws.com/onca/xml",values=params,errors='replace')
+
+    def item(self,asin):
+        return self.items([ asin ], max=1)[0]
+
+    def items(self,asinList, max=0):
+        items = []
+        count = 0
+        for maxTenList in self._lists_of_n(asinList,10):
+            params = {
+                'Service': 'AWSECommerceService',
+                'Operation': 'ItemLookup',
+                'ItemId': ','.join(maxTenList),
+                'ResponseGroup': 'RelatedItems,Large,OfferFull,PromotionDetails',
+                'RelationshipType': 'Episode,Season'
+            }
+            xml = self._request_xml(params)
+            for e in xml.xpath('//ns:Items/ns:Item', namespaces=self.NS):
+                count = count + 1
+                i = self._parse_item_el(e)
+                items.append( i )
+                if max > 0 and count >= max:
+                    return items
+        return items
+
+    def itemSearch(self,query, page=0):
+        params = {
+            'Service': 'AWSECommerceService',
+            'Operation': 'ItemSearch',
+            'SearchIndex': 'UnboxVideo',
+            'Keywords': query,
+            'ResponseGroup': 'RelatedItems,Large,OfferFull,PromotionDetails',
+            'RelationshipType': 'Episode,Season',
+        }
+        xml = self._request_xml(params)
+        items = []
+        ids = []
+        for e in xml.xpath('//ns:Items/ns:Item', namespaces=self.NS):
+            item = self._parse_item_el(e)
+            ids.append(item['asin'])
+            if item['parent'] != '':
+                if item['parent'] in ids:
+                    continue
+                item = self.item(item['parent'])
+                ids.append(item['asin'])
+            items.append( item )
+        if len(items) == 0:
+            PMS.Log( XML.StringFromElement(xml) )
+
+        return items
+
+    def purchasedItems(self, customerId=None, token=None):
+        if customerId == None or token == None:
+            return []
+
+        ret = []
+
+        params = {
+            'c':     customerId,
+            'token': token,
+            'f':     'getQueue',
+            't':     'Streaming'
+        }
+        html = HTTP.Request(self.AMAZON_PROXY_URL,values=params,errors='replace')
+        jsonString = html.split("\n")[2]
+        asinList = []
+        for i in JSON.ObjectFromString(jsonString):
+            asinInfo = i.get('FeedAttributeMap',None)
+            if asinInfo and asinInfo.get('ISSTREAMABLE','N') == 'Y' and asinInfo.get('ISRENTAL','N') == 'N':
+                asinList.append(asinInfo['ASIN'])
+                ret.append(asinInfo)
+
+        return self.items(asinList)
+
+    def _parse_item_el(self, el):
+        asin = el.xpath('ns:ASIN/text()', namespaces=self.NS)[0]
+        title = el.xpath('ns:ItemAttributes/ns:Title/text()', namespaces=self.NS)[0]
+        thumb = el.xpath('ns:LargeImage/ns:URL/text()', namespaces=self.NS)[0]
+
+        duration = ''
+        try:
+            duration = int(el.xpath('ns:ItemAttributes/ns:RunningTime/text()', namespaces=self.NS)[0])*60*1000
+        except:
+            pass
+
+        release_date = ''
+        try:
+            release_date = el.xpath('ns:ItemAttributes/ns:TheatricalReleaseDate/text()', namespaces=self.NS)[0]
+        except:
+            try:
+                release_date = el.xpath('ns:ItemAttributes/ns:ReleaseDate/text()', namespaces=self.NS)[0]
+            except:
+                pass
+
+        description = ''
+        try:
+            description = el.xpath('ns:ItemAttributes/ns:LongSynopsis/text()', namespaces=self.NS)[0]
+        except:
+            try:
+                description = el.xpath('ns:ItemAttributes/ns:ShortSynopsis/text()', namespaces=self.NS)[0]
+            except:
+                pass
+
+        rating = ''
+        try:
+            rating = float(el.xpath('ns:CustomerReviews/ns:AverageRating/text()',namespaces=self.NS)[0])*2
+        except:
+            pass
+
+        season = 0
+        try:
+            season = el.xpath('ns:ItemAttributes/ns:SeasonSequence/text()',namespaces=self.NS)[0]
+        except:
+            pass
+
+        episode = 0
+        try:
+            episode = el.xpath('ns:ItemAttributes/ns:EpisodeSequence/text()',namespaces=self.NS)[0]
+        except:
+            pass
+
+        if season == 0 and episode > 0:
+            season, episode = [ episode, season ]
+
+        parent = ''
+        children = []
+
+        try:
+            for ris in el.xpath('ns:RelatedItems',namespaces=self.NS):
+                rel = ris.xpath('ns:Relationship/text()',namespaces=self.NS)[0]
+                if rel == 'Parents':
+                    parent = ris.xpath('ns:RelatedItem/ns:Item/ns:ASIN/text()',namespaces=self.NS)[0]
+                elif rel == 'Children':
+                    for ri in ris.xpath('ns:RelatedItem',namespaces=self.NS):
+                        children.append( ri.xpath('ns:Item/ns:ASIN/text()',namespaces=self.NS)[0] )
+        except:
+            raise      
+            pass
+
+        subtitle = release_date.split('-')[0]
+
+        ret = {
+            'asin': asin,
+            'title': title,
+            'url': AMAZON_PLAYER_URL % asin,
+            'rating': rating,
+            'duration': duration,
+            'thumb': thumb,
+            'description': description,
+            'subtitle': subtitle,
+            'season': season,
+            'episode': episode,
+            'parent': parent,
+            'children': children
+        }
+
+        return ret
+        pass
+
+    def _lists_of_n(self, myList, n):
+        """Some amazon queries restrict the number of things that can be
+        passed in. For example, item lookups are restricted to 10 at a time.
+        this helps split lists into lists of lists"""
+        if len(myList) <= 0:
+            return []
+        
+        if len(myList) <= n:
+            return [ myList ]
+
+        ret = []
+        currentList = []
+        count = 0
+        for item in myList:
+            count = count + 1
+            currentList.append(item)
+            if count % n == 0:
+                ret.append(currentList)
+                currentList = []
+        if len(currentList) > 0:
+            ret.append(currentList)
+        return ret
+UnboxClient = AmazonUnbox( key=AMAZON_AWS_KEY, secret=AMAZON_AWS_SECRET )
