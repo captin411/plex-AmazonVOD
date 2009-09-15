@@ -68,19 +68,52 @@ def ChildTitlesMenu(sender,asin=None,purchasedOnly=False):
     dir = makeDirFromItems(children,dir,purchasedOnly=purchasedOnly)
     return dir
 
-def Nothing(sender):
+def BuyRent(sender,asin=None):
+    item = UnboxClient.item(asin,cache=False)
     return MessageContainer("Not implemented","Not implemented")
     pass
 
-def PreviewPopupMenu(sender,asin=None):
+def VideoPopupMenu(sender,asin=None):
     item = UnboxClient.item(asin)
+    detail = UnboxClient.itemDetail(asin)
     dir = MediaContainer(title1="Unpurchased",title2=sender.itemTitle)
     wvi = webvideoFromItem(item) 
     wvi.title = "Watch Preview"
     dir.Append(wvi)
-    dir.Append(Function(DirectoryItem(Nothing,"Buy", "Buy")))
-    dir.Append(Function(DirectoryItem(Nothing,"Rent", "Rent")))
+    if __customerId and __token:
+        if detail.get('ISRENTAL','N') == 'Y':
+            dir.Append(Function(DirectoryItem(BuyRent,"%s Rental - %s" % (_niceRentDuration(detail),item['price']), "%s Rental - %s" % (_niceRentDuration(detail),item['price'])),asin=asin))
+        elif detail.get('BUYABLE','N') == 'Y':
+            dir.Append(Function(DirectoryItem(BuyRent,"Buy - %s" % item['price'], "Buy - %s" % item['price']),asin=asin))
     return dir
+
+def FolderPopupMenu(sender,asin=None,purchasedOnly=False):
+    item = UnboxClient.item(asin)
+    detail = UnboxClient.itemDetail(asin)
+    dir = MediaContainer(title1="Unpurchased",title2=sender.itemTitle)
+    seeItems = folderdirFromItem(item,purchasedOnly=purchasedOnly)
+    seeItems.title = "See Series or Episodes"
+    dir.Append(seeItems)
+    if __customerId and __token:
+        if detail.get('ISRENTAL','N') == 'Y':
+            dir.Append(Function(DirectoryItem(BuyRent,"%s Rental - %s" % (_niceRentDuration(detail),item['price']), "%s Rental - %s" % (_niceRentDuration(detail),item['price'])),asin=asin))
+        elif detail.get('BUYABLE','N') == 'Y':
+            dir.Append(Function(DirectoryItem(BuyRent,"Buy All - %s" % item['price'], "Buy All - %s" % item['price']),asin=asin))
+
+    return dir
+
+def _niceRentDuration(item):
+
+    try:
+        dur = int(item['RENTALDURATION'])
+        days = int(float(dur)/24)
+        if days > 1:
+            return '%d Day' % days
+        else:
+            return '1 Day'
+    except Exception, e:
+        return ''
+
 
 def Menu(message_title=None,message_text=None):
 
@@ -112,6 +145,24 @@ def MenuSearch(sender, query=None):
 
 ####################################################################################################
 
+def folderdirFromItem(item,purchasedOnly=False):
+    tn = item['thumb']
+    if tn == '':
+        tn = R(AMAZON_ICON)
+    return Function(
+            DirectoryItem(
+                ChildTitlesMenu,
+                "%s" % item['long_title'],
+                thumb=tn,
+                subtitle='',
+                art='',
+                summary=item['description']
+            ),
+            asin="%s" % item['asin'],
+            purchasedOnly=purchasedOnly
+        )
+
+
 def webvideoFromItem(item):
     tn = item['thumb']
     if tn == '':
@@ -141,18 +192,24 @@ def makeDirFromItems(items, dir, purchasedOnly=False):
 
         if purchasedOnly and not isPurchased:
             continue
-        di = Function(
-            DirectoryItem(
-                ChildTitlesMenu,
-                "%s" % item['long_title'],
-                thumb=tn,
-                subtitle='',
-                art='',
-                summary=item['description']
-            ),
-            asin="%s" % item['asin'],
-            purchasedOnly=purchasedOnly
-        )
+
+
+        if isPurchased or item['price_int'] == 0:
+            di = folderdirFromItem(item,purchasedOnly=purchasedOnly)
+        else:
+            di = Function(
+                    PopupDirectoryItem(
+                        FolderPopupMenu,
+                        "%s %s" % (item['long_title'], item['price']),
+                        thumb=tn,
+                        summary=item['description'],
+                        subtitle='',
+                        art=''
+                    ),
+                    asin="%s" % item['asin'],
+                    purchasedOnly=purchasedOnly
+            )
+
         dir.Append(di)
     else:
         isPurchased = False
@@ -162,18 +219,19 @@ def makeDirFromItems(items, dir, purchasedOnly=False):
         if purchasedOnly and not isPurchased:
             continue
 
-        if isPurchased:
+        if isPurchased or item['price_int'] == 0:
             di = webvideoFromItem(item)
         else:
-            PMS.Log("%s not purchased" % item['asin'])
             di = Function(
                     PopupDirectoryItem(
-                        PreviewPopupMenu,
-                        "%s" % item['long_title'],
+                        VideoPopupMenu,
+                        "%s %s" % (item['long_title'], item['price']),
                         thumb=tn,
                         summary=item['description'],
-                        subtitle='',
-                        art=''
+                        subtitle=item['subtitle'],
+                        art='',
+                        duration=item['duration'],
+                        rating=item['rating']
                     ),
                     asin="%s" % item['asin']
                  )
@@ -267,6 +325,11 @@ class AmazonUnbox:
             host='ecs.amazonaws.com')
         self.__cache = {}
         self._conn.SignatureVersion = '2'
+
+    def _internal_proxy_request(self,params):
+        html = HTTP.Request(self.AMAZON_PROXY_URL,values=params,errors='replace')
+        jsonString = html.split("\n")[2]
+        return JSON.ObjectFromString(jsonString)
   
     def _request_xml(self,params):
         params['Timestamp'] = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
@@ -276,10 +339,29 @@ class AmazonUnbox:
         params['Signature'] = signature
         return XML.ElementFromURL("http://ecs.amazonaws.com/onca/xml",values=params,errors='replace')
 
-    def item(self,asin):
-        return self.items([ asin ], max=1)[0]
+    def itemDetail(self,asin,cache=True):
 
-    def items(self,asinList, max=0, purchased=False):
+        k = 'itemDetail_%s' % asin
+        ret = self.__cache.get(k)
+        if not ret:
+            params = {
+                'c':     '',
+                'token': '',
+                'f':     'getASINList',
+                't':     'Streaming',
+                'asinList': asin
+            }
+            try:
+                ret = self._internal_proxy_request(params)[0]
+                self.__cache[k] = ret
+            except:
+                ret = {}
+        return ret
+
+    def item(self,asin,cache=True):
+        return self.items([ asin ], max=1, cache=cache)[0]
+
+    def items(self,asinList, max=0, purchased=False, cache=True):
         items = []
         for maxTenList in self._lists_of_n(asinList,10):
 
@@ -288,7 +370,7 @@ class AmazonUnbox:
             for asin in maxTenList:
                 k = 'asin_%s' % asin
                 i = self.__cache.get(k)
-                if i:
+                if i and cache:
                     i['purchased_hint'] = purchased
                     items.append(i)
                 else:
@@ -299,7 +381,7 @@ class AmazonUnbox:
                     'Service': 'AWSECommerceService',
                     'Operation': 'ItemLookup',
                     'ItemId': ','.join(uncachedAsins),
-                    'ResponseGroup': 'RelatedItems,Large,OfferFull,PromotionDetails',
+                    'ResponseGroup': 'RelatedItems,Large,OfferFull,PromotionDetails,AlternateVersions',
                     'RelationshipType': 'Episode,Season'
                 }
                 xml = self._request_xml(params)
@@ -321,7 +403,7 @@ class AmazonUnbox:
             'Operation': 'ItemSearch',
             'SearchIndex': 'UnboxVideo',
             'Keywords': query,
-            'ResponseGroup': 'RelatedItems,Large,OfferFull,PromotionDetails',
+            'ResponseGroup': 'RelatedItems,Large,OfferFull,PromotionDetails,AlternateVersions',
             'RelationshipType': 'Episode,Season',
         }
         xml = self._request_xml(params)
@@ -380,9 +462,7 @@ class AmazonUnbox:
                 'f':     'getQueue',
                 't':     'Streaming'
             }
-            html = HTTP.Request(self.AMAZON_PROXY_URL,values=params,errors='replace')
-            jsonString = html.split("\n")[2]
-            for i in JSON.ObjectFromString(jsonString):
+            for i in self._internal_proxy_request(params):
                 asinInfo = i.get('FeedAttributeMap',None)
                 if asinInfo and asinInfo.get('ISSTREAMABLE','N') == 'Y' and asinInfo.get('ISRENTAL','N') == 'N':
                     asinList.append(asinInfo['ASIN'])
@@ -446,6 +526,14 @@ class AmazonUnbox:
         except:
             pass
 
+        price = ''
+        price_int = 0
+        try:
+            price = el.xpath('ns:OfferSummary/ns:LowestNewPrice/ns:FormattedPrice/text()',namespaces=self.NS)[0]
+            price_int = int(el.xpath('ns:OfferSummary/ns:LowestNewPrice/ns:Amount/text()',namespaces=self.NS)[0])
+        except:
+            pass
+
         if season == 0 and episode > 0:
             season, episode = [ episode, season ]
 
@@ -477,6 +565,8 @@ class AmazonUnbox:
         ret = {
             'asin': asin,
             'title': title,
+            'price': price,
+            'price_int': price_int,
             'long_title': long_title,
             'url': AMAZON_PLAYER_URL % asin,
             'rating': rating,
