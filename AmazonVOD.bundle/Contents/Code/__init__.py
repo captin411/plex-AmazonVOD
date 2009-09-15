@@ -16,6 +16,7 @@ AMAZON_AWS_KEY    = "0BARCCRGVHBC4DBYAN82"
 AMAZON_AWS_SECRET = "iwJYwj3RPe/pwLKKhU1cmJRuEu3RSUpNp+UiVRsm"
 
 AMAZON_ART = 'art-default.jpg'
+AMAZON_ICON = 'icon-default.png'
 
 CACHE_INTERVAL              = 3600
 DEBUG                       = False
@@ -27,11 +28,51 @@ __customerId = None
 __token      = None
 __tokensChecked = False
 
+def makeDirFromItems(items, dir, purchasedOnly=False):
+  items.sort(cmp=lambda a,b: cmp(a.get('long_title','').lower(),b.get('long_title','').lower()))
+  purchased = []
+  if purchasedOnly:
+      customerId,token = streamingTokens()
+      purchased = UnboxClient.purchasedAsins(customerId,token)
+
+  for item in items:
+    tn = item['thumb']
+    if tn == '':
+        tn = R(AMAZON_ICON)
+    if item['has_children']:
+        di = Function(
+            DirectoryItem(
+                ChildTitlesMenu,
+                "%s" % item['long_title'],
+                thumb=tn,
+                subtitle='',
+                art='',
+                summary=item['description']
+            ),
+            asin="%s" % item['asin'],
+            purchasedOnly=purchasedOnly
+        )
+        dir.Append(di)
+    else:
+
+        di = WebVideoItem(
+            item['url'],
+            "%s" % item['long_title'],
+            summary=item['description'],
+            subtitle=item['subtitle'],
+            duration=item['duration'],
+            thumb=tn,
+            rating=item['rating'])
+        if purchasedOnly and item['asin'] not in purchased:
+            continue
+        dir.Append(di)
+
+  return dir
 
 ####################################################################################################
 
 def Start():
-  Plugin.AddPrefixHandler(PLUGIN_PREFIX, Menu, L("amazon"), "icon-default.png", AMAZON_ART)
+  Plugin.AddPrefixHandler(PLUGIN_PREFIX, Menu, L("amazon"), AMAZON_ICON, AMAZON_ART)
   Plugin.AddPrefixHandler("%s/:/prefs/set" % PLUGIN_PREFIX ,PrefsHandler, "phandler")
   Plugin.AddViewGroup("InfoList", viewMode="InfoList", mediaType="items")
   Plugin.AddViewGroup("List", viewMode="List", mediaType="items")
@@ -62,10 +103,16 @@ def PrefsHandler(login=None,password=None):
   dir = MessageContainer(title,"%s\n%s" % (message,message_add))
   return dir
 
+def ChildTitlesMenu(sender,asin=[],purchasedOnly=False):
+    dir = MediaContainer(title2=sender.itemTitle,viewGroup='InfoList')
+    children = UnboxClient.childrenOf(asin)
+    dir = makeDirFromItems(children,dir)
+    return dir
+
 def Menu(message_title=None,message_text=None):
 
   customerId, token = streamingTokens()
-  dir = MediaContainer()
+  dir = MediaContainer(title1="Amazon VOD",viewGroup="List")
   if message_title != None and message_text != None:
     dir = MessageContainer(message_title,message_text)
     return dir
@@ -77,41 +124,26 @@ def Menu(message_title=None,message_text=None):
   return dir
 
 def MenuYourPurchases(sender):
-  dir = MediaContainer(title2=sender.itemTitle,view='InfoList')
+  dir = MediaContainer(title1="Your Purchases", title2=sender.itemTitle,viewGroup='InfoList')
 
   customerId, token = streamingTokens()
-  purchasedItems = UnboxClient.purchasedItems(customerId, token)
-  items = makeDirFromItems(purchasedItems)
-  if len(items) == 0:
-    dir = MessageContainer("Purchases","You do not have any purchases")
-    return dir
-  for i in items:
-    dir.Append(i)
-  return dir;
+  purchasedItems = UnboxClient.parentize(UnboxClient.purchasedItems(customerId, token))
+  dir = makeDirFromItems(purchasedItems,dir,purchasedOnly=True)
+  return dir
 
 def MenuSearch(sender, query=None):
-  dir = MediaContainer(title2=sender.itemTitle,view='InfoList')
-  res = UnboxClient.itemSearch(query)
-  items = makeDirFromItems(res)
-  if len(items) == 0:
-    dir = MessageContainer("Search","No results found for %s" % query)
-    return dir
-  for i in items:
-    dir.Append(i)
-  return dir;
+  dir = MediaContainer(title1="Search Results", title2=sender.itemTitle,viewGroup='InfoList')
+  res = UnboxClient.parentize(UnboxClient.itemSearch(query))
+  dir = makeDirFromItems(res,dir)
+  return dir
 
 ####################################################################################################
 
 
 def signIn():
 
-  PMS.Log("signIn() called")
-
   USER = Prefs.Get("login")
   PASS = Prefs.Get("password")
-
-  PMS.Log('user: %s' % USER)
-  PMS.Log('pass: %s' % '******')
 
   if not (USER and PASS):
     PMS.Log('user or pass is empty')
@@ -120,10 +152,8 @@ def signIn():
   x = HTTP.Request('https://www.amazon.com/gp/sign-in.html', errors='replace')
 
   PMS.Log('signing in')
-
   sessId = None
   for idx,cookie in enumerate(HTTP.__cookieJar):
-    PMS.Log("cookie: %s" % repr(cookie))
     Prefs.Set(cookie.name,cookie.value)
     if cookie.name == 'session-id':
       sessId = cookie.value
@@ -147,7 +177,6 @@ def signIn():
 ####################################################################################################
 
 def streamingTokens():
-  PMS.Log('streamingTokens()')
   global __customerId, __token, __tokensChecked
 
   if (__customerId and __token) or __tokensChecked:
@@ -181,21 +210,6 @@ def streamingTokens():
   PMS.Log("__token: %s" % __token)
   return (__customerId,__token)
 
-def makeDirFromItems(items):
-  ret = []
-  for item in items:
-    wvi = WebVideoItem(
-        item['url'],
-        item['title'],
-        summary=item['description'],
-        subtitle=item['subtitle'],
-        duration=item['duration'],
-        thumb=item['thumb'],
-        rating=item['rating'])
-    ret.append(wvi)
-  ret.sort(cmp=lambda a,b: cmp(a.__dict__.get('title'),b.__dict__.get('title')))
-  return ret
-
 class AmazonUnbox:
     def __init__(self, key, secret):
         self.XML_NS = 'http://webservices.amazon.com/AWSECommerceService/2009-03-31'
@@ -208,6 +222,7 @@ class AmazonUnbox:
             aws_secret_access_key=self.SECRET,
             is_secure=False,
             host='ecs.amazonaws.com')
+        self.__cache = {}
         self._conn.SignatureVersion = '2'
   
     def _request_xml(self,params):
@@ -223,23 +238,36 @@ class AmazonUnbox:
 
     def items(self,asinList, max=0):
         items = []
-        count = 0
         for maxTenList in self._lists_of_n(asinList,10):
-            params = {
-                'Service': 'AWSECommerceService',
-                'Operation': 'ItemLookup',
-                'ItemId': ','.join(maxTenList),
-                'ResponseGroup': 'RelatedItems,Large,OfferFull,PromotionDetails',
-                'RelationshipType': 'Episode,Season'
-            }
-            xml = self._request_xml(params)
-            for e in xml.xpath('//ns:Items/ns:Item', namespaces=self.NS):
-                count = count + 1
-                i = self._parse_item_el(e)
-                items.append( i )
-                if max > 0 and count >= max:
-                    return items
-        return items
+
+            uncachedAsins = []
+            # check cache first
+            for asin in maxTenList:
+                k = 'asin_%s' % asin
+                if self.__cache.get(k):
+                    items.append(self.__cache.get(k))
+                else:
+                    uncachedAsins.append(asin)
+
+            if len(uncachedAsins) > 0:
+                params = {
+                    'Service': 'AWSECommerceService',
+                    'Operation': 'ItemLookup',
+                    'ItemId': ','.join(uncachedAsins),
+                    'ResponseGroup': 'RelatedItems,Large,OfferFull,PromotionDetails',
+                    'RelationshipType': 'Episode,Season'
+                }
+                xml = self._request_xml(params)
+                for e in xml.xpath('//ns:Items/ns:Item', namespaces=self.NS):
+                    i = self._parse_item_el(e)
+                    k = 'asin_%s' % i['asin']
+                    self.__cache[k] = i
+                    items.append( i )
+
+        if max > 0 and len(items) >= max:
+            return items[0:max]
+        else:
+            return items
 
     def itemSearch(self,query, page=0):
         params = {
@@ -252,48 +280,76 @@ class AmazonUnbox:
         }
         xml = self._request_xml(params)
         items = []
-        ids = []
         for e in xml.xpath('//ns:Items/ns:Item', namespaces=self.NS):
             item = self._parse_item_el(e)
-            ids.append(item['asin'])
-            if item['parent'] != '':
-                if item['parent'] in ids:
-                    continue
-                item = self.item(item['parent'])
-                ids.append(item['asin'])
             items.append( item )
         if len(items) == 0:
             PMS.Log( XML.StringFromElement(xml) )
 
         return items
 
-    def purchasedItems(self, customerId=None, token=None):
+    def parentize(self,items):
+        newItems = []
+
+        item_count = len(items)
+        iter = 0
+        foundAsins = []
+        while item_count > 0:
+            iter = iter + 1
+            parents_found = []
+            parentAsins = []
+            for i in items:
+                if i['parent'] == '' and i['asin'] not in foundAsins:
+                    newItems.append(i)
+                    foundAsins.append(i['asin'])
+                elif i['parent'] not in parents_found:
+                    parents_found.append(i['parent'])
+                    parentAsins.append( i['parent'] )
+            if len(parentAsins) > 0:
+                items = self.items(parentAsins)
+            else:
+                items = []
+            item_count = len(items)
+        return newItems
+
+    def purchasedAsins(self, customerId=None, token=None):
         if customerId == None or token == None:
             return []
 
-        ret = []
-
-        params = {
-            'c':     customerId,
-            'token': token,
-            'f':     'getQueue',
-            't':     'Streaming'
-        }
-        html = HTTP.Request(self.AMAZON_PROXY_URL,values=params,errors='replace')
-        jsonString = html.split("\n")[2]
         asinList = []
-        for i in JSON.ObjectFromString(jsonString):
-            asinInfo = i.get('FeedAttributeMap',None)
-            if asinInfo and asinInfo.get('ISSTREAMABLE','N') == 'Y' and asinInfo.get('ISRENTAL','N') == 'N':
-                asinList.append(asinInfo['ASIN'])
-                ret.append(asinInfo)
+        k = 'purchased_%s_%s' % (customerId,token)
+        if self.__cache.get(k):
+            asinList = self.__cache.get(k)
+        else:
+            params = {
+                'c':     customerId,
+                'token': token,
+                'f':     'getQueue',
+                't':     'Streaming'
+            }
+            html = HTTP.Request(self.AMAZON_PROXY_URL,values=params,errors='replace')
+            jsonString = html.split("\n")[2]
+            for i in JSON.ObjectFromString(jsonString):
+                asinInfo = i.get('FeedAttributeMap',None)
+                if asinInfo and asinInfo.get('ISSTREAMABLE','N') == 'Y' and asinInfo.get('ISRENTAL','N') == 'N':
+                    asinList.append(asinInfo['ASIN'])
+            self.__cache[k] = asinList
 
-        return self.items(asinList)
+        return asinList
+
+    def purchasedItems(self, customerId=None, token=None):
+
+        return self.items(self.purchasedAsins(customerId,token))
 
     def _parse_item_el(self, el):
         asin = el.xpath('ns:ASIN/text()', namespaces=self.NS)[0]
         title = el.xpath('ns:ItemAttributes/ns:Title/text()', namespaces=self.NS)[0]
-        thumb = el.xpath('ns:LargeImage/ns:URL/text()', namespaces=self.NS)[0]
+
+        thumb = ''
+        try:
+            thumb = el.xpath('ns:LargeImage/ns:URL/text()', namespaces=self.NS)[0]
+        except:
+            pass
 
         duration = ''
         try:
@@ -327,13 +383,13 @@ class AmazonUnbox:
 
         season = 0
         try:
-            season = el.xpath('ns:ItemAttributes/ns:SeasonSequence/text()',namespaces=self.NS)[0]
+            season = int(el.xpath('ns:ItemAttributes/ns:SeasonSequence/text()',namespaces=self.NS)[0])
         except:
             pass
 
         episode = 0
         try:
-            episode = el.xpath('ns:ItemAttributes/ns:EpisodeSequence/text()',namespaces=self.NS)[0]
+            episode = int(el.xpath('ns:ItemAttributes/ns:EpisodeSequence/text()',namespaces=self.NS)[0])
         except:
             pass
 
@@ -357,9 +413,18 @@ class AmazonUnbox:
 
         subtitle = release_date.split('-')[0]
 
+        has_children = len(children) > 0
+
+        long_title = title
+
+        if not has_children and season > 0:
+            long_title = "Episode %02d: %s" % (episode,title)
+            subtitle = "Season %s" % season
+
         ret = {
             'asin': asin,
             'title': title,
+            'long_title': long_title,
             'url': AMAZON_PLAYER_URL % asin,
             'rating': rating,
             'duration': duration,
@@ -369,11 +434,47 @@ class AmazonUnbox:
             'season': season,
             'episode': episode,
             'parent': parent,
-            'children': children
+            'has_children': has_children
         }
 
         return ret
         pass
+
+    def childrenOf(self, asin):
+
+        k = 'children_of_asin_%s' % asin
+        childAsins = []
+        if self.__cache.get(k):
+            childAsins = self.__cache.get(k)
+        else:
+            max_pages = 1 
+            current_page = 1
+            while current_page <= max_pages:
+                params = {
+                    'Service': 'AWSECommerceService',
+                    'Operation': 'ItemLookup',
+                    'ItemId': asin,
+                    'RelatedItemPage': current_page,
+                    'ResponseGroup': 'RelatedItems',
+                    'RelationshipType': 'Episode,Season'
+                }
+                xml = self._request_xml(params)
+                for e in xml.xpath('//ns:Items/ns:Item', namespaces=self.NS):
+                    try:
+                        for ris in e.xpath('ns:RelatedItems',namespaces=self.NS):
+                            rel = ris.xpath('ns:Relationship/text()',namespaces=self.NS)[0]
+                            if rel == 'Children':
+                                max_pages = int(ris.xpath('ns:RelatedItemPageCount/text()',namespaces=self.NS)[0])
+                                for ri in ris.xpath('ns:RelatedItem',namespaces=self.NS):
+                                    a = ri.xpath('ns:Item/ns:ASIN/text()',namespaces=self.NS)[0]
+                                    if a not in childAsins:
+                                        childAsins.append( a )
+                    except:
+                        pass
+                current_page = current_page + 1
+            self.__cache[k] = childAsins
+
+        return self.items(childAsins)
 
     def _lists_of_n(self, myList, n):
         """Some amazon queries restrict the number of things that can be
