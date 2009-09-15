@@ -28,47 +28,6 @@ __customerId = None
 __token      = None
 __tokensChecked = False
 
-def makeDirFromItems(items, dir, purchasedOnly=False):
-  items.sort(cmp=lambda a,b: cmp(a.get('long_title','').lower(),b.get('long_title','').lower()))
-  purchased = []
-  if purchasedOnly:
-      customerId,token = streamingTokens()
-      purchased = UnboxClient.purchasedAsins(customerId,token)
-
-  for item in items:
-    tn = item['thumb']
-    if tn == '':
-        tn = R(AMAZON_ICON)
-    if item['has_children']:
-        di = Function(
-            DirectoryItem(
-                ChildTitlesMenu,
-                "%s" % item['long_title'],
-                thumb=tn,
-                subtitle='',
-                art='',
-                summary=item['description']
-            ),
-            asin="%s" % item['asin'],
-            purchasedOnly=purchasedOnly
-        )
-        dir.Append(di)
-    else:
-
-        di = WebVideoItem(
-            item['url'],
-            "%s" % item['long_title'],
-            summary=item['description'],
-            subtitle=item['subtitle'],
-            duration=item['duration'],
-            thumb=tn,
-            rating=item['rating'])
-        if purchasedOnly and item['asin'] not in purchased:
-            continue
-        dir.Append(di)
-
-  return dir
-
 ####################################################################################################
 
 def Start():
@@ -103,10 +62,24 @@ def PrefsHandler(login=None,password=None):
   dir = MessageContainer(title,"%s\n%s" % (message,message_add))
   return dir
 
-def ChildTitlesMenu(sender,asin=[],purchasedOnly=False):
+def ChildTitlesMenu(sender,asin=None,purchasedOnly=False):
     dir = MediaContainer(title2=sender.itemTitle,viewGroup='InfoList')
     children = UnboxClient.childrenOf(asin)
-    dir = makeDirFromItems(children,dir)
+    dir = makeDirFromItems(children,dir,purchasedOnly=purchasedOnly)
+    return dir
+
+def Nothing(sender):
+    return MessageContainer("Not implemented","Not implemented")
+    pass
+
+def PreviewPopupMenu(sender,asin=None):
+    item = UnboxClient.item(asin)
+    dir = MediaContainer(title1="Unpurchased",title2=sender.itemTitle)
+    wvi = webvideoFromItem(item) 
+    wvi.title = "Watch Preview"
+    dir.Append(wvi)
+    dir.Append(Function(DirectoryItem(Nothing,"Buy", "Buy")))
+    dir.Append(Function(DirectoryItem(Nothing,"Rent", "Rent")))
     return dir
 
 def Menu(message_title=None,message_text=None):
@@ -138,6 +111,76 @@ def MenuSearch(sender, query=None):
   return dir
 
 ####################################################################################################
+
+def webvideoFromItem(item):
+    tn = item['thumb']
+    if tn == '':
+        tn = R(AMAZON_ICON)
+    return WebVideoItem(
+        item['url'],
+        "%s" % item['long_title'],
+        summary=item['description'],
+        subtitle=item['subtitle'],
+        duration=item['duration'],
+        thumb=tn,
+        rating=item['rating'])
+
+def makeDirFromItems(items, dir, purchasedOnly=False):
+  items.sort(cmp=lambda a,b: cmp(a.get('long_title','').lower(),b.get('long_title','').lower()))
+  customerId,token = streamingTokens()
+  purchased = UnboxClient.purchasedAsins(customerId,token)
+
+  for item in items:
+    tn = item['thumb']
+    if tn == '':
+        tn = R(AMAZON_ICON)
+    if item['has_children']:
+        isPurchased = False
+        if item['asin'] in purchased or item.get('purchased_hint',False):
+            isPurchased = True
+
+        if purchasedOnly and not isPurchased:
+            continue
+        di = Function(
+            DirectoryItem(
+                ChildTitlesMenu,
+                "%s" % item['long_title'],
+                thumb=tn,
+                subtitle='',
+                art='',
+                summary=item['description']
+            ),
+            asin="%s" % item['asin'],
+            purchasedOnly=purchasedOnly
+        )
+        dir.Append(di)
+    else:
+        isPurchased = False
+        if item['asin'] in purchased or item.get('purchased_hint',False):
+            isPurchased = True
+
+        if purchasedOnly and not isPurchased:
+            continue
+
+        if isPurchased:
+            di = webvideoFromItem(item)
+        else:
+            PMS.Log("%s not purchased" % item['asin'])
+            di = Function(
+                    PopupDirectoryItem(
+                        PreviewPopupMenu,
+                        "%s" % item['long_title'],
+                        thumb=tn,
+                        summary=item['description'],
+                        subtitle='',
+                        art=''
+                    ),
+                    asin="%s" % item['asin']
+                 )
+        dir.Append(di)
+
+  return dir
+
 
 
 def signIn():
@@ -236,7 +279,7 @@ class AmazonUnbox:
     def item(self,asin):
         return self.items([ asin ], max=1)[0]
 
-    def items(self,asinList, max=0):
+    def items(self,asinList, max=0, purchased=False):
         items = []
         for maxTenList in self._lists_of_n(asinList,10):
 
@@ -244,8 +287,10 @@ class AmazonUnbox:
             # check cache first
             for asin in maxTenList:
                 k = 'asin_%s' % asin
-                if self.__cache.get(k):
-                    items.append(self.__cache.get(k))
+                i = self.__cache.get(k)
+                if i:
+                    i['purchased_hint'] = purchased
+                    items.append(i)
                 else:
                     uncachedAsins.append(asin)
 
@@ -262,6 +307,7 @@ class AmazonUnbox:
                     i = self._parse_item_el(e)
                     k = 'asin_%s' % i['asin']
                     self.__cache[k] = i
+                    i['purchased_hint'] = purchased
                     items.append( i )
 
         if max > 0 and len(items) >= max:
@@ -294,6 +340,7 @@ class AmazonUnbox:
         item_count = len(items)
         iter = 0
         foundAsins = []
+        parent_purchased_hint = {}
         while item_count > 0:
             iter = iter + 1
             parents_found = []
@@ -303,10 +350,16 @@ class AmazonUnbox:
                     newItems.append(i)
                     foundAsins.append(i['asin'])
                 elif i['parent'] not in parents_found:
+                    if i.get('purchased_hint',False):
+                        parent_purchased_hint[i['parent']] = True
                     parents_found.append(i['parent'])
                     parentAsins.append( i['parent'] )
             if len(parentAsins) > 0:
-                items = self.items(parentAsins)
+                items = []
+                for i in self.items(parentAsins):
+                    if i['asin'] in parent_purchased_hint:
+                        i['purchased_hint'] = True
+                    items.append(i)
             else:
                 items = []
             item_count = len(items)
@@ -339,7 +392,7 @@ class AmazonUnbox:
 
     def purchasedItems(self, customerId=None, token=None):
 
-        return self.items(self.purchasedAsins(customerId,token))
+        return self.items(self.purchasedAsins(customerId,token),purchased=True)
 
     def _parse_item_el(self, el):
         asin = el.xpath('ns:ASIN/text()', namespaces=self.NS)[0]
