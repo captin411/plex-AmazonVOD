@@ -11,9 +11,12 @@ from boto.connection import AWSQueryConnection
 
 PLUGIN_PREFIX     = "/video/AmazonVOD"
 
+AMAZON_BASE_URL   = "https://www.amazon.com"
 AMAZON_PLAYER_URL = "http://www.amazon.com/gp/video/streaming/mini-mode.html?asin=%s"
 AMAZON_AWS_KEY    = "0BARCCRGVHBC4DBYAN82"
 AMAZON_AWS_SECRET = "iwJYwj3RPe/pwLKKhU1cmJRuEu3RSUpNp+UiVRsm"
+
+ASSOC_TAG = "perlstercom-20"
 
 AMAZON_ART = 'art-default.jpg'
 AMAZON_ICON = 'icon-default.png'
@@ -68,37 +71,49 @@ def ChildTitlesMenu(sender,asin=None,purchasedOnly=False):
     dir = makeDirFromItems(children,dir,purchasedOnly=purchasedOnly)
     return dir
 
-def BuyRent(sender,asin=None):
-    item = UnboxClient.item(asin,cache=False)
-    return MessageContainer("Not implemented","Not implemented")
-    pass
+def MakePurchase(sender,asin=None):
+
+    if asin is not None:
+        customerId,token = streamingTokens()
+        purchasedAsins = UnboxClient.purchasedAsins(customerId,token)
+
+        if asin in purchasedAsins:
+            return MessageContainer("Already Purchased","You have already purchased this item")
+
+        orderNumber = UnboxClient.doPurchase(customerId, [ asin ])
+        if orderNumber is not None:
+            return MessageContainer("Purchase Complete","Order number %s" % orderNumber)
+        else:
+            return MessageContainer("Purchase Failed","There was a problem purchasing this item")
+    else:
+        return MessageContainer("Purchase Failed","No Product was provided")
 
 def VideoPopupMenu(sender,asin=None):
     item = UnboxClient.item(asin)
     detail = UnboxClient.itemDetail(asin)
+    UnboxClient.registerProductClick(asin)
     dir = MediaContainer(title1="Unpurchased",title2=sender.itemTitle)
     wvi = webvideoFromItem(item) 
     wvi.title = "Watch Preview"
     dir.Append(wvi)
-    if __customerId and __token:
-        if detail.get('ISRENTAL','N') == 'Y':
-            dir.Append(Function(DirectoryItem(BuyRent,"%s Rental - %s" % (_niceRentDuration(detail),item['price']), "%s Rental - %s" % (_niceRentDuration(detail),item['price'])),asin=asin))
-        elif detail.get('BUYABLE','N') == 'Y':
-            dir.Append(Function(DirectoryItem(BuyRent,"Buy - %s" % item['price'], "Buy - %s" % item['price']),asin=asin))
+    if detail.get('ISRENTAL','N') == 'Y':
+        dir.Append(Function(DirectoryItem(MakePurchase,"%s Rental - %s" % (_niceRentDuration(detail),item['price']), "%s Rental - %s" % (_niceRentDuration(detail),item['price'])),asin=asin))
+    elif detail.get('BUYABLE','N') == 'Y':
+        dir.Append(Function(DirectoryItem(MakePurchase,"Buy Video - %s" % item['price'], "Buy Video - %s" % item['price']),asin=asin))
     return dir
 
 def FolderPopupMenu(sender,asin=None,purchasedOnly=False):
     item = UnboxClient.item(asin)
     detail = UnboxClient.itemDetail(asin)
+    UnboxClient.registerProductClick(asin)
     dir = MediaContainer(title1="Unpurchased",title2=sender.itemTitle)
     seeItems = folderdirFromItem(item,purchasedOnly=purchasedOnly)
     seeItems.title = "See Series or Episodes"
     dir.Append(seeItems)
-    if __customerId and __token:
-        if detail.get('ISRENTAL','N') == 'Y':
-            dir.Append(Function(DirectoryItem(BuyRent,"%s Rental - %s" % (_niceRentDuration(detail),item['price']), "%s Rental - %s" % (_niceRentDuration(detail),item['price'])),asin=asin))
-        elif detail.get('BUYABLE','N') == 'Y':
-            dir.Append(Function(DirectoryItem(BuyRent,"Buy All - %s" % item['price'], "Buy All - %s" % item['price']),asin=asin))
+    if detail.get('ISRENTAL','N') == 'Y':
+        dir.Append(Function(DirectoryItem(MakePurchase,"%s Rental - %s" % (_niceRentDuration(detail),item['price']), "%s Rental - %s" % (_niceRentDuration(detail),item['price'])),asin=asin))
+    elif detail.get('BUYABLE','N') == 'Y':
+        dir.Append(Function(DirectoryItem(MakePurchase,"Buy Video - %s" % item['price'], "Buy Video - %s" % item['price']),asin=asin))
 
     return dir
 
@@ -118,6 +133,7 @@ def _niceRentDuration(item):
 def Menu(message_title=None,message_text=None):
 
   customerId, token = streamingTokens()
+
   dir = MediaContainer(title1="Amazon VOD",viewGroup="List")
   if message_title != None and message_text != None:
     dir = MessageContainer(message_title,message_text)
@@ -243,6 +259,8 @@ def makeDirFromItems(items, dir, purchasedOnly=False):
 
 def signIn():
 
+  PMS.Log('signin()')
+
   USER = Prefs.Get("login")
   PASS = Prefs.Get("password")
 
@@ -250,12 +268,12 @@ def signIn():
     PMS.Log('user or pass is empty')
     return False
 
-  x = HTTP.Request('https://www.amazon.com/gp/sign-in.html', errors='replace')
+  x = HTTP.Request('https://www.amazon.com/?tag=%s' % ASSOC_TAG, errors='replace')
+  x = HTTP.Request('https://www.amazon.com/gp/sign-in.html?tag=%s' % ASSOC_TAG, errors='replace')
 
   PMS.Log('signing in')
   sessId = None
   for idx,cookie in enumerate(HTTP.__cookieJar):
-    Prefs.Set(cookie.name,cookie.value)
     if cookie.name == 'session-id':
       sessId = cookie.value
  
@@ -264,14 +282,18 @@ def signIn():
 
   params = {
       'path': '/gp/homepage.html',
-      'useRedirectOnSuccess': '0',
+      'useRedirectOnSuccess': '1',
       'protocol': 'https',
       'sessionId': sessId,
       'action': 'sign-in',
       'password': PASS,
-      'email': USER
+      'email': USER,
+      'x': '62',
+      'y': '11'
   }
-  x = HTTP.Request('https://www.amazon.com/gp/flex/sign-in/select.html',values=params,errors='replace')
+  x = HTTP.Request('https://www.amazon.com/gp/flex/sign-in/select.html?ie=UTF8&protocol=https&tag=%s' % ASSOC_TAG,values=params,errors='replace')
+  if HTTP.__cookieJar is not None:
+    HTTP.__cookieJar.save("%s/HTTPCookies" % Data.__dataPath,ignore_discard=True)
 
   return True
 
@@ -281,17 +303,16 @@ def streamingTokens():
   global __customerId, __token, __tokensChecked
 
   if (__customerId and __token) or __tokensChecked:
-      PMS.Log('found customerid+token or tokensChecked')
       return (__customerId,__token)
 
-  html = HTTP.Request('http://www.amazon.com/gp/video/streaming/',errors='replace')
+  html = HTTP.Request('http://www.amazon.com/gp/video/streaming/?tag=%s' % ASSOC_TAG,errors='replace')
   paramStart = html.find("&customer=")
   if paramStart == -1:
       ret = signIn()
       if not ret:
         PMS.Log('ttry1 fail')
         return (None,None)
-      html = HTTP.Request('http://www.amazon.com/gp/video/streaming/',errors='replace')
+      html = HTTP.Request('http://www.amazon.com/gp/video/streaming/?tag=%s' % ASSOC_TAG,errors='replace')
       paramStart = html.find("&customer=")
       if paramStart == -1:
           PMS.Log('ttry2 fail')
@@ -307,8 +328,14 @@ def streamingTokens():
 
   __tokensChecked = True
 
-  PMS.Log("__customerId: %s" % __customerId)
-  PMS.Log("__token: %s" % __token)
+  ## ok, now make sure that the region is allowed.  don't want
+  ## to ever charge people and give them nothing
+  geoCheck = UnboxClient.geoCheck(__customerId)
+  if geoCheck != 'true':
+      PMS.Log("geo check fail, marking as not logged in")
+      __customerId = None
+      __token      = None
+
   return (__customerId,__token)
 
 class AmazonUnbox:
@@ -335,6 +362,7 @@ class AmazonUnbox:
         params['Timestamp'] = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
         params['AWSAccessKeyId'] = self.KEY
         params['Version']='2009-03-31'
+        params['AssociateTag'] = ASSOC_TAG
         qs, signature = self._conn.get_signature(params, 'POST', '/onca/xml')
         params['Signature'] = signature
         return XML.ElementFromURL("http://ecs.amazonaws.com/onca/xml",values=params,errors='replace')
@@ -447,6 +475,74 @@ class AmazonUnbox:
             item_count = len(items)
         return newItems
 
+    def geoCheck(self,customerId=''):
+        params = {
+            't': 'Streaming',
+            'c': customerId,
+            'f': 'geoCheck'
+        }
+
+        return self._internal_proxy_request(params)
+
+    def registerProductClick(self,asin):
+        try:
+            item = self.item(asin)
+            x = HTTP.Request(item['detail_url'], errors='replace')
+            return True
+        except:
+            pass
+        return False
+
+
+    def doPurchase(self,customerId,asinList):
+        PMS.Log("purchasing")
+
+        if len(asinList) == 0:
+            PMS.Log("no ASINs found - fail")
+            return None
+
+        if not customerId or customerId == '':
+            PMS.Log("no customerId found - fail")
+            return None
+
+
+        first_asin = asinList[0]
+        PURCHASE_HANDLER = 'http://www.amazon.com/gp/video/order/handle-buy-box.html'
+        params = {
+            't': 'atv',
+            'ref.atv.clientid': '00000000-0000-0000-000000000000',
+            'o_cust': customerId,
+            'o_cust_os': 'Macintosh',
+            'itemCount': len(asinList),
+            'retJSON': 'true',
+            'o_asin': first_asin,
+        }
+        count = 0
+        for asin in asinList:
+            params['ASIN.%d' % count] = asin
+            count = count + 1
+
+        PMS.Log(params)
+
+        try:
+            jsonStr = HTTP.Request(PURCHASE_HANDLER,values=params,errors='replace')
+            PMS.Log(jsonStr)
+            jsonObj = JSON.ObjectFromString(jsonStr)
+            PMS.Log(jsonObj)
+
+            if jsonObj['success'] == 'true':
+                self.clearCache()
+                return jsonObj['orderID']
+        except Exception, e:
+            PMS.Log(e)
+
+        return None
+        pass
+
+    def clearCache(self):
+        self.__cache = {}
+        return True
+
     def purchasedAsins(self, customerId=None, token=None):
         if customerId == None or token == None:
             return []
@@ -476,6 +572,7 @@ class AmazonUnbox:
 
     def _parse_item_el(self, el):
         asin = el.xpath('ns:ASIN/text()', namespaces=self.NS)[0]
+        detail_url = el.xpath('ns:DetailPageURL/text()', namespaces=self.NS)[0]
         title = el.xpath('ns:ItemAttributes/ns:Title/text()', namespaces=self.NS)[0]
 
         thumb = ''
@@ -569,6 +666,7 @@ class AmazonUnbox:
             'price_int': price_int,
             'long_title': long_title,
             'url': AMAZON_PLAYER_URL % asin,
+            'detail_url': detail_url,
             'rating': rating,
             'duration': duration,
             'thumb': thumb,
