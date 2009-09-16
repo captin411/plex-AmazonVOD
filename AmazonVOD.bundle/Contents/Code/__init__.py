@@ -135,7 +135,9 @@ def VideoPopupMenu(sender,asin=None):
     c,t = streamingTokens()
     if c and t:
         detail = UnboxClient.itemDetail(asin)
-        #UnboxClient.registerProductClick(asin)
+        @spawn
+        def registerClick(asin=asin):
+            UnboxClient.registerProductClick(asin)
         dir = addPurchaseOptions(dir,item,detail)
     return dir
 
@@ -148,7 +150,9 @@ def FolderPopupMenu(sender,asin=None,purchasedOnly=False):
     c,t = streamingTokens()
     if c and t:
         detail = UnboxClient.itemDetail(asin)
-        #UnboxClient.registerProductClick(asin)
+        @spawn
+        def registerClick(asin=asin):
+            UnboxClient.registerProductClick(asin)
         dir = addPurchaseOptions(dir,item,detail)
 
     return dir
