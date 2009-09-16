@@ -287,8 +287,6 @@ def makeDirFromItems(items, dir, purchasedOnly=False, doSort=True):
   purchased = UnboxClient.purchasedAsins(customerId,token)
 
   for item in items:
-    if item['price'] == '':
-        continue
     tn = item['thumb']
     if tn == '':
         tn = R(AMAZON_ICON)
@@ -326,6 +324,8 @@ def makeDirFromItems(items, dir, purchasedOnly=False, doSort=True):
         if purchasedOnly and not isPurchased:
             continue
 
+        if not isPurchased and item['price'] == '':
+            continue
         if isPurchased or item['price_int'] == 0:
             di = webvideoFromItem(item)
         else:
