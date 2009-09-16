@@ -90,30 +90,35 @@ def MakePurchase(sender,asin=None):
 
 def VideoPopupMenu(sender,asin=None):
     item = UnboxClient.item(asin)
-    detail = UnboxClient.itemDetail(asin)
-    UnboxClient.registerProductClick(asin)
     dir = MediaContainer(title1="Unpurchased",title2=sender.itemTitle)
     wvi = webvideoFromItem(item) 
     wvi.title = "Watch Preview"
     dir.Append(wvi)
-    if detail.get('ISRENTAL','N') == 'Y':
-        dir.Append(Function(DirectoryItem(MakePurchase,"%s Rental - %s" % (_niceRentDuration(detail),item['price']), "%s Rental - %s" % (_niceRentDuration(detail),item['price'])),asin=asin))
-    elif detail.get('BUYABLE','N') == 'Y':
-        dir.Append(Function(DirectoryItem(MakePurchase,"Buy Video - %s" % item['price'], "Buy Video - %s" % item['price']),asin=asin))
+
+    c,t = streamingTokens()
+    if c and t:
+        detail = UnboxClient.itemDetail(asin)
+        UnboxClient.registerProductClick(asin)
+        if detail.get('ISRENTAL','N') == 'Y':
+            dir.Append(Function(DirectoryItem(MakePurchase,"%s Rental - %s" % (_niceRentDuration(detail),item['price']), "%s Rental - %s" % (_niceRentDuration(detail),item['price'])),asin=asin))
+        elif detail.get('BUYABLE','N') == 'Y':
+            dir.Append(Function(DirectoryItem(MakePurchase,"Buy Video - %s" % item['price'], "Buy Video - %s" % item['price']),asin=asin))
     return dir
 
 def FolderPopupMenu(sender,asin=None,purchasedOnly=False):
     item = UnboxClient.item(asin)
-    detail = UnboxClient.itemDetail(asin)
-    UnboxClient.registerProductClick(asin)
     dir = MediaContainer(title1="Unpurchased",title2=sender.itemTitle)
     seeItems = folderdirFromItem(item,purchasedOnly=purchasedOnly)
     seeItems.title = "See Series or Episodes"
     dir.Append(seeItems)
-    if detail.get('ISRENTAL','N') == 'Y':
-        dir.Append(Function(DirectoryItem(MakePurchase,"%s Rental - %s" % (_niceRentDuration(detail),item['price']), "%s Rental - %s" % (_niceRentDuration(detail),item['price'])),asin=asin))
-    elif detail.get('BUYABLE','N') == 'Y':
-        dir.Append(Function(DirectoryItem(MakePurchase,"Buy Video - %s" % item['price'], "Buy Video - %s" % item['price']),asin=asin))
+    c,t = streamingTokens()
+    if c and t:
+        detail = UnboxClient.itemDetail(asin)
+        UnboxClient.registerProductClick(asin)
+        if detail.get('ISRENTAL','N') == 'Y':
+            dir.Append(Function(DirectoryItem(MakePurchase,"%s Rental - %s" % (_niceRentDuration(detail),item['price']), "%s Rental - %s" % (_niceRentDuration(detail),item['price'])),asin=asin))
+        elif detail.get('BUYABLE','N') == 'Y':
+            dir.Append(Function(DirectoryItem(MakePurchase,"Buy Video - %s" % item['price'], "Buy Video - %s" % item['price']),asin=asin))
 
     return dir
 
