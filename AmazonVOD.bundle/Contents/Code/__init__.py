@@ -165,6 +165,57 @@ def _niceRentDuration(item):
     except Exception, e:
         return ''
 
+def TopGenreMenu(sender):
+    dir = MediaContainer(title1="Genres", title2=sender.itemTitle,viewGroup='InfoList')
+    genres = UnboxClient.browseNodes()
+    for g in genres:
+        dir.Append(Function(DirectoryItem(GenreOptions,'%s' % g['name'], '%s' % g['name']),browseNode='%s' % g['id']))
+
+    return dir
+
+def BrowseNodeSearch(sender,browseNode=None,opts=None):
+    dir = MediaContainer(title1='Search Results', title2=sender.itemTitle,viewGroup='InfoList')
+    opts['BrowseNode'] = browseNode
+
+    res = UnboxClient.itemSearch(opts=opts)
+    dir = makeDirFromItems(res,dir,doSort=False)
+    return dir
+
+def GenreOptions(sender,browseNode=None,depth=1):
+    dir = MediaContainer(title1='Genre Options', title2=sender.itemTitle,viewGroup='InfoList')
+
+    if depth > 1:
+        dir.Append(Function(
+            DirectoryItem(
+                BrowseNodeSearch,
+                'Best Sellers',
+                'Best Sellers'
+            ),
+            browseNode=browseNode,
+            opts={
+                'Sort': 'salesrank'
+            }
+        ))
+        dir.Append(Function(
+            DirectoryItem(
+                BrowseNodeSearch,
+                'New Arrivals',
+                'New Arrivals'
+            ),
+            browseNode=browseNode,
+            opts={
+                'Sort': '-video-release-date'
+            }
+        ))
+    else:
+        genres = UnboxClient.browseNodes(root=browseNode)
+        for g in genres:
+            dir.Append(Function(DirectoryItem(GenreOptions,'%s' % g['name'], '%s' % g['name']),browseNode='%s' % g['id'],depth=depth+1))
+
+    return dir
+    
+
+
 
 def Menu(message_title=None,message_text=None):
 
@@ -176,6 +227,7 @@ def Menu(message_title=None,message_text=None):
     return dir
   if customerId != None:
     dir.Append(Function(DirectoryItem(MenuYourPurchases,"Your Purchases", thumb=R("purchased.png"))))
+  dir.Append(Function(DirectoryItem(TopGenreMenu,"Genres", "Genres", thumb=R("search.png") )))
   dir.Append(Function(InputDirectoryItem(MenuSearch,"Search", "Search", thumb=R("search.png") )))
   dir.Append(PrefsItem(title="Preferences", thumb=R("gear.png")) )
   dir.nocache = 1
@@ -191,7 +243,7 @@ def MenuYourPurchases(sender):
 
 def MenuSearch(sender, query=None):
   dir = MediaContainer(title1="Search Results", title2=sender.itemTitle,viewGroup='InfoList')
-  res = UnboxClient.parentize(UnboxClient.itemSearch(query))
+  res = UnboxClient.parentize(UnboxClient.itemSearch(query=query))
   dir = makeDirFromItems(res,dir)
   return dir
 
@@ -228,12 +280,15 @@ def webvideoFromItem(item):
         thumb=tn,
         rating=item['rating'])
 
-def makeDirFromItems(items, dir, purchasedOnly=False):
-  items.sort(cmp=lambda a,b: cmp(a.get('long_title','').lower(),b.get('long_title','').lower()))
+def makeDirFromItems(items, dir, purchasedOnly=False, doSort=True):
+  if doSort:
+    items.sort(cmp=lambda a,b: cmp(a.get('long_title','').lower(),b.get('long_title','').lower()))
   customerId,token = streamingTokens()
   purchased = UnboxClient.purchasedAsins(customerId,token)
 
   for item in items:
+    if item['price'] == '':
+        continue
     tn = item['thumb']
     if tn == '':
         tn = R(AMAZON_ICON)
@@ -420,7 +475,6 @@ class AmazonUnbox:
                 self.__cache[k] = ret
             except:
                 ret = {}
-        PMS.Log(ret)
         return ret
 
     def item(self,asin,cache=True):
@@ -462,15 +516,37 @@ class AmazonUnbox:
         else:
             return items
 
-    def itemSearch(self,query, page=0):
+    def browseNodes(self,root='16261641'):
+        params = {
+            'Service': 'AWSECommerceService',
+            'Operation': 'BrowseNodeLookup',
+            'ResponseGroup': 'BrowseNodeInfo',
+            'BrowseNodeId': root
+        }
+
+        xml = self._request_xml(params)
+        items = []
+        for e in xml.xpath('//ns:Children/ns:BrowseNode', namespaces=self.NS):
+            id = e.xpath('ns:BrowseNodeId/text()', namespaces=self.NS)[0]
+            name = e.xpath('ns:Name/text()', namespaces=self.NS)[0]
+            items.append( { 'id': id, 'name': name } )
+
+        return items
+
+
+    def itemSearch(self,query='', opts={}):
+        if query != '':
+            opts['Keywords'] = query
+
         params = {
             'Service': 'AWSECommerceService',
             'Operation': 'ItemSearch',
             'SearchIndex': 'UnboxVideo',
-            'Keywords': query,
             'ResponseGroup': 'RelatedItems,Large,OfferFull,PromotionDetails,AlternateVersions',
             'RelationshipType': 'Episode,Season',
         }
+        params.update(opts)
+
         xml = self._request_xml(params)
         items = []
         for e in xml.xpath('//ns:Items/ns:Item', namespaces=self.NS):
@@ -672,6 +748,7 @@ class AmazonUnbox:
             season, episode = [ episode, season ]
 
         parent = ''
+        parent_name = ''
         children = []
 
         try:
@@ -679,6 +756,7 @@ class AmazonUnbox:
                 rel = ris.xpath('ns:Relationship/text()',namespaces=self.NS)[0]
                 if rel == 'Parents':
                     parent = ris.xpath('ns:RelatedItem/ns:Item/ns:ASIN/text()',namespaces=self.NS)[0]
+                    parent_name = ris.xpath('ns:RelatedItem/ns:Item/ns:ItemAttributes/ns:Title/text()',namespaces=self.NS)[0]
                 elif rel == 'Children':
                     for ri in ris.xpath('ns:RelatedItem',namespaces=self.NS):
                         children.append( ri.xpath('ns:Item/ns:ASIN/text()',namespaces=self.NS)[0] )
@@ -694,7 +772,7 @@ class AmazonUnbox:
 
         if not has_children and season > 0:
             long_title = "Episode %02d: %s" % (episode,title)
-            subtitle = "Season %s" % season
+            subtitle = "%s" % parent_name
 
         ret = {
             'asin': asin,
@@ -712,10 +790,10 @@ class AmazonUnbox:
             'season': season,
             'episode': episode,
             'parent': parent,
+            'parent_name': parent_name,
             'has_children': has_children
         }
 
-        PMS.Log(ret)
         return ret
         pass
 
