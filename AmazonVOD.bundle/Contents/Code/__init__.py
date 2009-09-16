@@ -88,6 +88,42 @@ def MakePurchase(sender,asin=None):
     else:
         return MessageContainer("Purchase Failed","No Product was provided")
 
+def addPurchaseOptions(dir,item,detail):
+
+    price = '%s' % item['price']
+    asin  = '%s' % item['asin']
+
+    action = None
+    noun   = None
+    if detail.get('ISPREORDER','N') == 'Y':
+        action = 'Pre-order'
+        if item['has_children']:
+            noun = 'Season'
+        else:
+            noun = 'Video'
+    elif detail.get('ISSEASONPASS','N') == 'Y':
+        action = 'Buy'
+        noun = 'Season Pass'
+
+    if detail.get('ISRENTAL','N') == 'Y':
+        action = 'Rent'
+        noun = '%s Rental' % _niceRentDuration(detail)
+    elif detail.get('BUYABLE','N') == 'Y':
+        if action is None:
+            action = 'Buy'
+        if noun is None:
+            if item['has_children']:
+                noun = 'Season'
+            else:
+                noun = 'Video'
+
+    if action != None and noun != None:
+        title = "%s %s - %s" % (action,noun,price)
+        dir.Append(Function(DirectoryItem(MakePurchase,title,title),asin=asin))
+
+    return dir
+
+
 def VideoPopupMenu(sender,asin=None):
     item = UnboxClient.item(asin)
     dir = MediaContainer(title1="Unpurchased",title2=sender.itemTitle)
@@ -95,14 +131,12 @@ def VideoPopupMenu(sender,asin=None):
     wvi.title = "Watch Preview"
     dir.Append(wvi)
 
+
     c,t = streamingTokens()
     if c and t:
         detail = UnboxClient.itemDetail(asin)
-        UnboxClient.registerProductClick(asin)
-        if detail.get('ISRENTAL','N') == 'Y':
-            dir.Append(Function(DirectoryItem(MakePurchase,"%s Rental - %s" % (_niceRentDuration(detail),item['price']), "%s Rental - %s" % (_niceRentDuration(detail),item['price'])),asin=asin))
-        elif detail.get('BUYABLE','N') == 'Y':
-            dir.Append(Function(DirectoryItem(MakePurchase,"Buy Video - %s" % item['price'], "Buy Video - %s" % item['price']),asin=asin))
+        #UnboxClient.registerProductClick(asin)
+        dir = addPurchaseOptions(dir,item,detail)
     return dir
 
 def FolderPopupMenu(sender,asin=None,purchasedOnly=False):
@@ -114,11 +148,8 @@ def FolderPopupMenu(sender,asin=None,purchasedOnly=False):
     c,t = streamingTokens()
     if c and t:
         detail = UnboxClient.itemDetail(asin)
-        UnboxClient.registerProductClick(asin)
-        if detail.get('ISRENTAL','N') == 'Y':
-            dir.Append(Function(DirectoryItem(MakePurchase,"%s Rental - %s" % (_niceRentDuration(detail),item['price']), "%s Rental - %s" % (_niceRentDuration(detail),item['price'])),asin=asin))
-        elif detail.get('BUYABLE','N') == 'Y':
-            dir.Append(Function(DirectoryItem(MakePurchase,"Buy Video - %s" % item['price'], "Buy Video - %s" % item['price']),asin=asin))
+        #UnboxClient.registerProductClick(asin)
+        dir = addPurchaseOptions(dir,item,detail)
 
     return dir
 
@@ -389,6 +420,7 @@ class AmazonUnbox:
                 self.__cache[k] = ret
             except:
                 ret = {}
+        PMS.Log(ret)
         return ret
 
     def item(self,asin,cache=True):
@@ -683,6 +715,7 @@ class AmazonUnbox:
             'has_children': has_children
         }
 
+        PMS.Log(ret)
         return ret
         pass
 
