@@ -1,46 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<site site="http://.*.amazon.com"
+<site site="http://.*\.amazon\.com"
     plugin="http://.*\.images-amazon\.com/images/G/01/digital/video/streaming/.*?/UnboxScreeningRoomClient\._.*?\.swf"
-    initialState="buffering"
-    manualLock="true"
+    initialState="playing"
+    windowHeight="720"
+    windowWidth="1280"
 	version="1.0">
-
-    <!-- agent="Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10.5; en-US; rv:1.9.1.3) Gecko/20090824 Firefox/3.5.3" -->
 
 	<crop x="0" y="0" width="0" height="0" />
 
-    <dead x="0" y="0" />
-
-    <!-- 993.000000 x 410.000000 -->
-
-    <!--
     <seekbar type="simple">
-      <start x="48" y="-78"/>
-      <end x="1200" y="-78"/>
       <dead x="100" y="100" />
       <played>
-        <color rgb="698851"/>
-        <color rgb="658250"/>
-        <color rgb="5f7a4b"/>
-        <color rgb="587147"/>
-        <color rgb="536841"/>
       </played>
     </seekbar>
-    -->
-
-    <state name="buffering">
-        <event>
-            <condition>
-                <frameLoaded />
-            </condition>
-            <action>
-                <pause time="1000"/>
-                <run script="sc=document.getElementById('streaming_container'); stb=document.getElementById('streamBoxTable');sc.style.height='720px';sc.style.width='1280px';stb.style.height='720px';stb.style.width='1280px';e=document.getElementById('episodeListSWF');if(e){e.parentNode.remove(e);}"/>
-                <lockPlugin/>
-                <goto state="playing" />
-            </action>
-        </event>
-    </state>
 
     <state name="playing">
         <event>
@@ -48,24 +20,23 @@
                 <command name="pause"/>
             </condition>
             <action>
-                <move x="50" y="50"/>
-                <pause time="50"/>
-                <click x="50" y="50"/>
-                <pause time="50"/>
+            <!-- this totally works but there is no javascript control to unpause =(
+                <run script="$.pauseCurrentItem()"/>
+            -->
                 <type key="32" />
                 <goto state="paused" />
             </action>
         </event>
     </state>
-
+    
 	<state name="paused">
 		<event>
           <condition>
-            <command name="play"/>
+                <command name="play"/>
           </condition>
           <action>
-            <type key="32" />
-	  		<goto state="playing" />
+                <type key="32" />
+                <goto state="playing" />
           </action>
         </event>
 	</state>
