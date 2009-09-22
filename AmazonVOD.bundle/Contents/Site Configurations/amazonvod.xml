@@ -30,6 +30,16 @@
                 <goto state="paused" />
             </action>
         </event>
+        <!-- look for a white pixel at a certain point and assume it's the watch rental now button: click it! -->
+        <event>
+            <condition>
+                <color x="665" y="293" rgb="ffffff"/>
+            </condition>
+            <action>
+                <click x="665" y="293"/>
+                <pause time="100"/>
+            </action>
+        </event>
     </state>
     
 	<state name="paused">

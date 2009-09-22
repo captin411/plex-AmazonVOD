@@ -6,6 +6,11 @@ from PMS.Objects import *
 from PMS.Shortcuts import *
 from boto.connection import AWSQueryConnection
 
+#
+# TODO:
+# - Figure out some way to pause/resume -- seems difficult
+#
+
 
 ####################################################################################################
 
@@ -95,27 +100,24 @@ def addPurchaseOptions(dir,item,detail):
 
     action = None
     noun   = None
-    if detail.get('ISPREORDER','N') == 'Y':
-        action = 'Pre-order'
-        if item['has_children']:
+    if detail.get('ISRENTAL','N') == 'Y':
+        if detail.get('ISPREORDER','N') == 'Y':
+            action = 'Pre-order'
+        else:
+            action = 'Rent'
+        noun = '%s Rental' % _niceRentDuration(detail)
+    elif detail.get('BUYABLE','N') == 'Y':
+        if detail.get('ISPREORDER','N') == 'Y':
+            action = 'Pre-order'
+        else:
+            action = 'Buy'
+
+        if detail.get('ISSEASONPASS','N') == 'Y':
+            noun = 'Season Pass'
+        elif item['has_children']:
             noun = 'Season'
         else:
             noun = 'Video'
-    elif detail.get('ISSEASONPASS','N') == 'Y':
-        action = 'Buy'
-        noun = 'Season Pass'
-
-    if detail.get('ISRENTAL','N') == 'Y':
-        action = 'Rent'
-        noun = '%s Rental' % _niceRentDuration(detail)
-    elif detail.get('BUYABLE','N') == 'Y':
-        if action is None:
-            action = 'Buy'
-        if noun is None:
-            if item['has_children']:
-                noun = 'Season'
-            else:
-                noun = 'Video'
 
     if action != None and noun != None:
         title = "%s %s - %s" % (action,noun,price)
@@ -677,6 +679,7 @@ class AmazonUnbox:
             }
             for i in self._internal_proxy_request(params):
                 asinInfo = i.get('FeedAttributeMap',None)
+                PMS.Log(asinInfo)
                 if asinInfo and asinInfo.get('ISSTREAMABLE','N') == 'Y':
                     asinList.append(asinInfo['ASIN'])
             self.__cache[k] = asinList
