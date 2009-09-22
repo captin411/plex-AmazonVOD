@@ -9,7 +9,8 @@ from boto.connection import AWSQueryConnection
 #
 # TODO:
 # - Figure out some way to pause/resume -- seems difficult
-#
+# - Occasionally see the "you can only watch videos with up to 2 devices" message.  Has something to do with the 'deviceid' which is set "somehow" and seems to be changing each time you go into the webvideo item.  Not sure how to combat this.
+# - Figure out how to group a "buyable" and "rentable" item into one. eg. Batman 2.99 to rent and Batman 9.99 to buy should show up as "Batman" with two options. one to "buy for 9.99" and one for "rent for "2.99" instead of showing up in the list as one two separate products.
 
 
 ####################################################################################################
