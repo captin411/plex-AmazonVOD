@@ -677,7 +677,7 @@ class AmazonUnbox:
             }
             for i in self._internal_proxy_request(params):
                 asinInfo = i.get('FeedAttributeMap',None)
-                if asinInfo and asinInfo.get('ISSTREAMABLE','N') == 'Y' and asinInfo.get('ISRENTAL','N') == 'N':
+                if asinInfo and asinInfo.get('ISSTREAMABLE','N') == 'Y':
                     asinList.append(asinInfo['ASIN'])
             self.__cache[k] = asinList
 

@@ -17,12 +17,15 @@
     <state name="playing">
         <event>
             <condition>
-                <command name="pause"/>
+                <and>
+                    <command name="pause"/>
+                </and>
             </condition>
             <action>
             <!-- this totally works but there is no javascript control to unpause =(
                 <run script="$.pauseCurrentItem()"/>
             -->
+                <click x="25" y="-25"/>
                 <type key="32" />
                 <goto state="paused" />
             </action>
@@ -35,6 +38,7 @@
                 <command name="play"/>
           </condition>
           <action>
+                <click x="25" y="-25"/>
                 <type key="32" />
                 <goto state="playing" />
           </action>
