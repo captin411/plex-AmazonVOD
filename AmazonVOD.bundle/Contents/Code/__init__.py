@@ -22,6 +22,9 @@ AMAZON_PLAYER_URL = "http://www.amazon.com/gp/video/streaming/mini-mode.html?asi
 AMAZON_AWS_KEY    = "0BARCCRGVHBC4DBYAN82"
 AMAZON_AWS_SECRET = "iwJYwj3RPe/pwLKKhU1cmJRuEu3RSUpNp+UiVRsm"
 
+
+FORCE_COOKIE_STORAGE = True
+
 ASSOC_TAG = "perlstercom-20"
 
 AMAZON_ART = 'art-default.jpg'
@@ -305,7 +308,6 @@ def makeDirFromItems(items, dir, purchasedOnly=False, doSort=True):
         if purchasedOnly and not isPurchased:
             continue
 
-
         if isPurchased or item['price_int'] == 0:
             di = folderdirFromItem(item,purchasedOnly=purchasedOnly)
         else:
@@ -372,6 +374,9 @@ def signIn():
   PMS.Log('signing in')
   sessId = None
   for idx,cookie in enumerate(HTTP.__cookieJar):
+    if FORCE_COOKIE_STORAGE:
+        cookie.discard = False
+        cookie.expires = int(2147483647)
     if cookie.name == 'session-id':
       sessId = cookie.value
  
@@ -390,8 +395,11 @@ def signIn():
       'y': '11'
   }
   x = HTTP.Request('https://www.amazon.com/gp/flex/sign-in/select.html?ie=UTF8&protocol=https&tag=%s' % ASSOC_TAG,values=params,errors='replace')
-  if HTTP.__cookieJar is not None:
-    HTTP.__cookieJar.save("%s/HTTPCookies" % Data.__dataPath,ignore_discard=True)
+
+  if FORCE_COOKIE_STORAGE:
+      for idx,cookie in enumerate(HTTP.__cookieJar):
+        cookie.discard = False
+        cookie.expires = int(2147483647)
 
   return True
 
@@ -402,6 +410,9 @@ def streamingTokens():
 
   if (__customerId and __token) or __tokensChecked:
       return (__customerId,__token)
+
+  for idx,cookie in enumerate(HTTP.__cookieJar):
+    PMS.Log(repr(cookie.__dict__))
 
   html = HTTP.Request('http://www.amazon.com/gp/video/streaming/?tag=%s' % ASSOC_TAG,errors='replace')
   paramStart = html.find("&customer=")

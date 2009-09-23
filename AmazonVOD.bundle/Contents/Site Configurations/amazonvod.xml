@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <site site="http://.*\.amazon\.com"
     plugin="http://.*\.images-amazon\.com/images/G/01/digital/video/streaming/.*?/UnboxScreeningRoomClient\._.*?\.swf"
-    initialState="playing"
+    initialState="check_login"
     windowHeight="720"
     windowWidth="1280"
 	version="1.0">
@@ -13,6 +13,40 @@
       <played>
       </played>
     </seekbar>
+
+    <condition name="loggedin">
+        <and>
+            <javascript script="(document.cookie.length&gt;0 &amp;&amp; document.cookie.indexOf('x-main=')!=-1) ? 1 : 0" matches="1"/>
+        </and>
+    </condition>
+
+    <state name="check_login">
+        <event>
+            <condition>
+                <and>
+                    <frameLoaded/>
+                    <not>
+                        <condition name="loggedin"/>
+                    </not>
+                </and>
+            </condition>
+            <action>
+                <goto state="end" param="You must log into amazon.com with Safari too before playing videos. You may also have to restart Plex and Plex Media Server."/>
+                <!-- <goto state="playing"/> -->
+            </action>
+        </event>
+        <event>
+            <condition>
+                <and>
+                    <frameLoaded/>
+                    <condition name="loggedin"/>
+                </and>
+            </condition>
+            <action>
+                <goto state="playing"/>
+            </action>
+        </event>
+    </state>
 
     <state name="playing">
         <event>
