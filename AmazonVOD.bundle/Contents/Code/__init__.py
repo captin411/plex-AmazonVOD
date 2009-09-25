@@ -49,6 +49,18 @@ def Start():
   Plugin.AddViewGroup("List", viewMode="List", mediaType="items")
   MediaContainer.art = R(AMAZON_ART)
 
+  # when the plugin fires up (PMS is started) go ahead
+  # and log in and snag the purchased items to make things
+  # seem faster when you come into the plugin
+  @spawn
+  def preCache():
+      try:
+          customerId, token = streamingTokens()
+          if customerId and token:
+              UnboxClient.purchasedItems(customerId, token)
+      except:
+          pass
+
 def CreatePrefs():
   Prefs.Add(id='login', type='text', default='', label='Login Email')
   Prefs.Add(id='password', type='text', default='', label='Password', option='hidden')
