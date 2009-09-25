@@ -1,4 +1,4 @@
-import time
+import time, re, htmlentitydefs
 
 # PMS plugin framework
 from PMS import *
@@ -272,11 +272,11 @@ def folderdirFromItem(item,purchasedOnly=False):
     return Function(
             DirectoryItem(
                 ChildTitlesMenu,
-                "%s" % item['long_title'],
+                unescape("%s" % item['long_title']),
                 thumb=tn,
                 subtitle='',
                 art='',
-                summary=item['description']
+                summary=unescape(item['description'])
             ),
             asin="%s" % item['asin'],
             purchasedOnly=purchasedOnly
@@ -289,8 +289,8 @@ def webvideoFromItem(item):
         tn = R(AMAZON_ICON)
     return WebVideoItem(
         item['url'],
-        "%s" % item['long_title'],
-        summary=item['description'],
+        unescape("%s" % item['long_title']),
+        summary=unescape(item['description']),
         subtitle=item['subtitle'],
         duration=item['duration'],
         thumb=tn,
@@ -320,9 +320,9 @@ def makeDirFromItems(items, dir, purchasedOnly=False, doSort=True):
             di = Function(
                     PopupDirectoryItem(
                         FolderPopupMenu,
-                        "%s %s" % (item['long_title'], item['price']),
+                        unescape("%s %s" % (item['long_title'], item['price'])),
                         thumb=tn,
-                        summary=item['description'],
+                        summary=unescape(item['description']),
                         subtitle='',
                         art=''
                     ),
@@ -347,9 +347,9 @@ def makeDirFromItems(items, dir, purchasedOnly=False, doSort=True):
             di = Function(
                     PopupDirectoryItem(
                         VideoPopupMenu,
-                        "%s %s" % (item['long_title'], item['price']),
+                        unescape("%s %s" % (item['long_title'], item['price'])),
                         thumb=tn,
-                        summary=item['description'],
+                        summary=unescape(item['description']),
                         subtitle=item['subtitle'],
                         art='',
                         duration=item['duration'],
@@ -452,6 +452,33 @@ def streamingTokens():
       __token      = None
 
   return (__customerId,__token)
+
+##
+# http://effbot.org/zone/re-sub.htm#unescape-html
+# Removes HTML or XML character references and entities from a text string.
+#
+# @param text The HTML (or XML) source text.
+# @return The plain text, as a Unicode string, if necessary.
+def unescape(text):
+    def fixup(m):
+        text = m.group(0)
+        if text[:2] == "&#":
+            # character reference
+            try:
+                if text[:3] == "&#x":
+                    return unichr(int(text[3:-1], 16))
+                else:
+                    return unichr(int(text[2:-1]))
+            except ValueError:
+                pass
+        else:
+            # named entity
+            try:
+                text = unichr(htmlentitydefs.name2codepoint[text[1:-1]])
+            except KeyError:
+                pass
+        return text # leave as is
+    return re.sub("&#?\w+;", fixup, text)
 
 class AmazonUnbox:
     def __init__(self, key, secret):
@@ -881,3 +908,4 @@ class AmazonUnbox:
             ret.append(currentList)
         return ret
 UnboxClient = AmazonUnbox( key=AMAZON_AWS_KEY, secret=AMAZON_AWS_SECRET )
+
