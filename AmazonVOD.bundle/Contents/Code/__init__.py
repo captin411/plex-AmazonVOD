@@ -91,9 +91,15 @@ def MakePurchase(sender,asin=None):
 
         orderNumber = UnboxClient.doPurchase(customerId, [ asin ])
         if orderNumber is not None:
-            return MessageContainer("Purchase Complete","Order number %s" % orderNumber)
+            message = """Your order number is %s. The
+video will now be in "Your Purchases" section.
+Pre-orders may not be available immediately.""" % orderNumber
+            return MessageContainer("Purchase Complete",message)
         else:
-            return MessageContainer("Purchase Failed","There was a problem purchasing this item")
+            message = """You need to have a valid payment method listed for your
+ 1-Click settings.  You may want to try your first purchase
+ from amazon.com directly."""
+            return MessageContainer("Purchase Failed",message)
     else:
         return MessageContainer("Purchase Failed","No Product was provided")
 
