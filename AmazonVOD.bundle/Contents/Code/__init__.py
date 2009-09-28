@@ -48,6 +48,7 @@ def Start():
   Plugin.AddViewGroup("InfoList", viewMode="InfoList", mediaType="items")
   Plugin.AddViewGroup("List", viewMode="List", mediaType="items")
   MediaContainer.art = R(AMAZON_ART)
+  DirectoryItem.thumb = R(AMAZON_ICON)
 
   # when the plugin fires up (PMS is started) go ahead
   # and log in and snag the purchased items to make things
