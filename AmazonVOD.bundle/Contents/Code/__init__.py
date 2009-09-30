@@ -14,13 +14,12 @@ AMAZON_BASE_URL   = "https://www.amazon.com"
 AMAZON_PLAYER_URL = "http://www.amazon.com/gp/video/streaming/mini-mode.html?asin=%s"
 AMAZON_AWS_KEY    = "0BARCCRGVHBC4DBYAN82"
 AMAZON_AWS_SECRET = "iwJYwj3RPe/pwLKKhU1cmJRuEu3RSUpNp+UiVRsm"
-
+ASSOC_TAG = "plco09-20"
 
 FORCE_COOKIE_STORAGE = True
 
-ASSOC_TAG = "perlstercom-20"
 
-AMAZON_ART = 'art-default.jpg'
+AMAZON_ART = 'art-default.png'
 AMAZON_ICON = 'icon-default.png'
 
 CACHE_INTERVAL              = 3600
