@@ -422,7 +422,21 @@ def streamingTokens():
   if (__customerId and __token) or __tokensChecked:
       return (__customerId,__token)
 
-  html = HTTP.Request('http://www.amazon.com/gp/video/streaming/?tag=%s' % ASSOC_TAG,errors='replace')
+  ## find any movie and follow the link so that we can find a page with a
+  ## flash player on it
+
+  mostPopularHTML = HTTP.Request('http://www.amazon.com/Genres/b/ref=sv_atv_0?ie=UTF8&node=16261641')
+
+  # <a class="title" href="http://www.amazon.com/Home/dp/B00451SU6G/ref=sr_1_3?s=digital-video&ie=UTF8&qid=1286168594&sr=1-3">
+  try:
+      firstProductLinkURL = re.search('href="(http://www.amazon.com/[^/"]+/dp/[^"]+s=digital-video[^"]*)"',mostPopularHTML).group(1)
+  except:
+      PMS.Log("unable to find a page with a flash player for inspection")
+      return (None, None)
+
+  PMS.Log(firstProductLinkURL)
+  
+  html = HTTP.Request(firstProductLinkURL)
   paramStart = html.find("&customer=")
   if paramStart == -1:
       ret = signIn()
